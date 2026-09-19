@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: rental-settlement-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rental
+      POSTGRES_PASSWORD: rental
+      POSTGRES_DB: rental_settlement
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rental -d rental_settlement"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    container_name: rental-settlement-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://rental:rental@db:5432/rental_settlement?sslmode=disable"
+      JWT_ACCESS_SECRET: "change-me-access-secret-32-chars!"
+      JWT_REFRESH_SECRET: "change-me-refresh-secret-32-chars!"
+      STORAGE_ROOT: "/data/storage"
+      CORS_ALLOWED_ORIGINS: "*"
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/data/storage
+
+volumes:
+  pgdata:
+  uploads:

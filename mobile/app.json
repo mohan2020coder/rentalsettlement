@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Rental Settlement",
+    "slug": "rental-settlement-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.rentalsettlement.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "in.rentalsettlement.app"
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}
