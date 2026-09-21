@@ -2,12 +2,10 @@ package tests
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 
 	"rental-settlement/backend/internal/server"
 )
@@ -25,19 +23,18 @@ func setupParties(t *testing.T, app *server.App) (landlordAccess, tenantAccess, 
 	return
 }
 
-func acceptTenancy(t *testing.T, app *server.App, db *gorm.DB, tenancyID, tenantAccess string) {
+func acceptTenancy(t *testing.T, app *server.App, tenancyID, tenantAccess string) {
 	t.Helper()
-	_, token := fetchTenancy(t, db)
-	resp := Perform(app, http.MethodPost, "/api/v1/tenancies/"+tenancyID+"/accept", fmt.Sprintf(`{"invite_token":%q}`, token), tenantAccess)
+	resp := Perform(app, http.MethodPost, "/api/v1/tenancies/"+tenancyID+"/accept", `{}`, tenantAccess)
 	require.Equal(t, http.StatusOK, resp.Code, readBody(resp))
 }
 
 func TestAgreementLifecycle(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Landlord creates version 1.
 	termsBody := `{

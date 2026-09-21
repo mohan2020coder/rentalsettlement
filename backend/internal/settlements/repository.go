@@ -48,6 +48,11 @@ func (r *Repository) AddItem(ctx context.Context, i *Item) error {
 	return r.db.WithContext(ctx).Create(i).Error
 }
 
+// RemoveItems deletes all lines of a settlement so they can be rebuilt.
+func (r *Repository) RemoveItems(ctx context.Context, settlementID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("settlement_id = ?", settlementID).Delete(&Item{}).Error
+}
+
 // AddEvent appends a settlement event.
 func (r *Repository) AddEvent(ctx context.Context, e *Event) error {
 	return r.db.WithContext(ctx).Create(e).Error

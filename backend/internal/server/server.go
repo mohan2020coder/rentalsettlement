@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"rental-settlement/backend/internal/agreements"
+	"rental-settlement/backend/internal/applications"
 	"rental-settlement/backend/internal/audit"
 	"rental-settlement/backend/internal/auth"
 	"rental-settlement/backend/internal/billing"
@@ -123,7 +124,7 @@ func (a *App) buildComponents() {
 	a.Components.Maintenance = maintenance.NewService(maintenance.NewRepository(a.Deps.DB), a.Components.Tenancies, a.Components.Billing, a.Components.Audit, a.Components.Notifications)
 	a.Components.DeductionsRepo = deductions.NewRepository(a.Deps.DB)
 	a.Components.Deductions = deductions.NewService(a.Components.DeductionsRepo, a.Components.Tenancies, a.Components.Audit, a.Components.Notifications)
-	a.Components.Settlements = settlements.NewService(settlements.NewRepository(a.Deps.DB), a.Components.Tenancies, a.Components.DeductionsRepo, a.Components.Audit, a.Components.Notifications)
+	a.Components.Settlements = settlements.NewService(settlements.NewRepository(a.Deps.DB), propRepo, a.Components.Tenancies, a.Components.DeductionsRepo, a.Components.Audit, a.Components.Notifications)
 }
 
 func (a *App) registerRoutes() {
@@ -150,7 +151,8 @@ func (a *App) registerRoutes() {
 	inspections.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.Billing, a.Components.Audit, a.Components.Notifications, a.Deps.Storage)
 	maintenance.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.Billing, a.Components.Audit, a.Components.Notifications)
 	deductions.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.Audit, a.Components.Notifications)
-	settlements.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.DeductionsRepo, a.Components.Audit, a.Components.Notifications)
+	settlements.RegisterRoutes(protected, a.Deps.DB, properties.NewRepository(a.Deps.DB), a.Components.Tenancies, a.Components.DeductionsRepo, a.Components.Audit, a.Components.Notifications)
+	applications.RegisterRoutes(protected, a.Deps.DB, properties.NewRepository(a.Deps.DB), a.Components.UserRepo, a.Components.Tenancies, a.Components.Agreements, a.Components.Audit, a.Components.Notifications)
 	audit.RegisterRoutes(protected, a.Deps.DB, tenancies.GuardParty(a.Components.Tenancies))
 	notifications.RegisterRoutes(protected, a.Deps.DB)
 	evidence.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.Audit)

@@ -10,11 +10,11 @@ import (
 )
 
 func TestMaintenanceFlow(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Tenant reports an issue.
 	resp := Perform(app, http.MethodPost, "/api/v1/maintenance/tenancy/"+tenancyID, `{"title":"Leaking tap","description":"Dripping since yesterday","category":"PLUMBING","priority":"HIGH"}`, tenantAccess)

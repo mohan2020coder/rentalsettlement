@@ -1,47 +1,47 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+
+export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<
+  RootStackParamList,
+  T
+>;
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
-  Main: undefined;
-};
-
-export type LandlordStackParamList = {
-  Properties: undefined;
-  PropertyDetail: { propertyId: string };
-  NewProperty: undefined;
-  Tenancies: undefined;
+  Main: NavigatorScreenParams<TabParamList> | undefined;
+  TenancyDetail: { tenancyId: string; propertyName?: string };
   NewTenancy: undefined;
-  TenancyDetail: { tenancyId: string };
+  PropertyForm: { propertyId?: string };
+  ApplicationForm: {
+    propertyId: string;
+    propertyName: string;
+    monthlyRentMinor: number;
+    currency: string;
+  };
+  Applications: undefined;
   Agreement: { tenancyId: string };
   Inspections: { tenancyId: string };
   InspectionDetail: { inspectionId: string };
-  Claims: { tenancyId: string };
+  NewInspection: { tenancyId: string; kind: 'MOVE_IN' | 'MOVE_OUT' };
+  Maintenance: { tenancyId: string };
+  MaintenanceDetail: { maintenanceId: string };
+  NewMaintenance: { tenancyId: string };
+  Deductions: { tenancyId: string };
   ClaimDetail: { claimId: string };
   NewClaim: { tenancyId: string };
+  Dispute: { disputeId: string };
   Settlement: { tenancyId: string };
-  Maintenance: { tenancyId: string };
-  MaintenanceDetail: { requestId: string };
-  NewMaintenance: { tenancyId: string };
-  Audit: { tenancyId: string };
-  Evidence: { tenancyId: string };
+  NotificationDetail: { notificationId: string };
+  Profile: undefined;
+  Audit: { tenancyId?: string };
 };
 
-export type TenantStackParamList = {
+export type TabParamList = {
   Home: undefined;
-  TenancyDetail: { tenancyId: string };
-  Agreement: { tenancyId: string };
-  Inspections: { tenancyId: string };
-  InspectionDetail: { inspectionId: string };
-  Claims: { tenancyId: string };
-  ClaimDetail: { claimId: string };
-  Settlement: { tenancyId: string };
-  Maintenance: { tenancyId: string };
-  MaintenanceDetail: { requestId: string };
-  NewMaintenance: { tenancyId: string };
-  Audit: { tenancyId: string };
-  Evidence: { tenancyId: string };
+  Discover: undefined;
+  Properties: undefined;
+  Notifications: undefined;
+  Billing: undefined;
+  Account: undefined;
 };
-
-export type NotificationsTabParams = undefined;
-
-// Shared screen route params extracted from either role stack.
-export type TenancyScreenParams = { tenancyId: string };

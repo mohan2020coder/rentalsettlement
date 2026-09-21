@@ -1,182 +1,193 @@
-import { apiUrl } from './config';
+import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import { ApiError, AuthResponse, Envelope } from './types';
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly details?: Record<string, unknown>;
+export const API_BASE_URL =
+  (process.env.EXPO_PUBLIC_API_URL as string | undefined) ||
+  'http://localhost:8080/api/v1';
 
-  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+const ACCESS_TTL_MS = 14 * 60 * 1000;
+
+interface TokenProviders {
+  getAccessToken: () => string | null;
+  getRefreshToken: () => string | null;
+  setTokens: (access: string, refresh: string) => void;
+  onSessionExpired: () => void;
+}
+
+let providers: TokenProviders | null = null;
+
+export function registerTokenProviders(p: TokenProviders) {
+  providers = p;
+}
+
+let accessExpiresAt = 0;
+
+export class ApiClientError extends Error {
+  code: string;
+  status: number;
+  details?: Record<string, string>;
+
+  constructor(message: string, code: string, status: number, details?: Record<string, string>) {
     super(message);
-    this.name = 'ApiError';
-    this.status = status;
+    this.name = 'ApiClientError';
     this.code = code;
+    this.status = status;
     this.details = details;
   }
 }
 
-export class NetworkError extends Error {
-  constructor() {
-    super('Cannot reach the server. Check your connection and try again.');
-    this.name = 'NetworkError';
+export function extractError(err: unknown): ApiClientError {
+  if (err instanceof ApiClientError) {
+    return err;
   }
+  if (axios.isAxiosError(err)) {
+    const aerr = err as AxiosError<{ error?: ApiError }>;
+    const body = aerr.response?.data?.error;
+    if (body) {
+      return new ApiClientError(body.message, body.code, aerr.response?.status ?? 500, body.details);
+    }
+    return new ApiClientError(
+      aerr.message || 'Network error',
+      'NETWORK_ERROR',
+      aerr.response?.status ?? 0,
+    );
+  }
+  return new ApiClientError('Unexpected error', 'UNKNOWN', 0);
 }
 
-interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  body?: unknown;
-  asBlob?: boolean;
-}
-
-/**
- * Minimal HTTP client with token authentication and a 401-triggered refresh.
- * The refresh flow uses the stored refresh token; a failing refresh signs the
- * user out (handled by the auth context via onSessionExpired).
- */
-class ApiClient {
-  accessToken: string | null = null;
-  refreshToken: string | null = null;
-  onTokenRefreshed?: (access: string, refresh: string) => void;
-  onSessionExpired?: () => void;
-
-  private refreshing: Promise<boolean> | null = null;
-
-  async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    try {
-      return await this.doFetch(path, options);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401 && this.refreshToken) {
-        const ok = await this.refresh();
-        if (!ok) {
-          this.onSessionExpired?.();
-          throw err;
-        }
-        return this.doFetch(path, options);
-      }
-      throw err;
-    }
+async function refreshTokens(): Promise<boolean> {
+  if (!providers) {
+    return false;
   }
-
-  private async doFetch<T>(path: string, options: RequestOptions): Promise<T> {
-    const headers: Record<string, string> = {};
-    if (options.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-    }
-    if (this.accessToken) {
-      headers.Authorization = `Bearer ${this.accessToken}`;
-    }
-
-    let resp: Response;
-    try {
-      resp = await fetch(apiUrl(path), {
-        method: options.method ?? 'GET',
-        headers,
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      });
-    } catch {
-      throw new NetworkError();
-    }
-
-    if (options.asBlob) {
-      if (!resp.ok) {
-        throw await this.errorFrom(resp);
-      }
-      return (await resp.blob()) as unknown as T;
-    }
-
-    let payload: unknown = null;
-    const text = await resp.text();
-    if (text) {
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        payload = text;
-      }
-    }
-
-    if (!resp.ok) {
-      const envelope = payload as { error?: { code?: string; message?: string; details?: Record<string, unknown> } };
-      throw new ApiError(
-        resp.status,
-        envelope?.error?.code ?? 'REQUEST_FAILED',
-        envelope?.error?.message ?? `Request failed with status ${resp.status}`,
-        envelope?.error?.details,
-      );
-    }
-
-    // Envelope unwrap: { success, data }.
-    if (payload && typeof payload === 'object' && 'success' in payload && 'data' in payload) {
-      return (payload as { data: T }).data;
-    }
-    return payload as T;
+  const refreshToken = providers.getRefreshToken();
+  if (!refreshToken) {
+    return false;
   }
-
-  private async refresh(): Promise<boolean> {
-    if (!this.refreshing) {
-      this.refreshing = this.doRefresh().finally(() => {
-        this.refreshing = null;
-      });
-    }
-    return this.refreshing;
-  }
-
-  private async doRefresh(): Promise<boolean> {
-    const refreshToken = this.refreshToken;
-    if (!refreshToken) {
-      return false;
-    }
-    try {
-      const client = new ApiClient();
-      const data = await client.request<{
-        access_token: string;
-        refresh_token: string;
-        expires_in: number;
-      }>('/auth/refresh', {
-        method: 'POST',
-        body: { refresh_token: refreshToken },
-      });
-      this.accessToken = data.access_token;
-      this.refreshToken = data.refresh_token;
-      this.onTokenRefreshed?.(data.access_token, data.refresh_token);
+  try {
+    const resp = await axios.post<Envelope<AuthResponse>>(`${API_BASE_URL}/auth/refresh`, {
+      refresh_token: refreshToken,
+    });
+    if (resp.data?.success && resp.data.data?.access_token) {
+      providers.setTokens(resp.data.data.access_token, resp.data.data.refresh_token);
+      accessExpiresAt = Date.now() + ACCESS_TTL_MS;
       return true;
-    } catch {
-      return false;
     }
-  }
-
-  private async errorFrom(resp: Response): Promise<ApiError> {
-    try {
-      const payload = (await resp.json()) as {
-        error?: { code?: string; message?: string; details?: Record<string, unknown> };
-      };
-      return new ApiError(
-        resp.status,
-        payload.error?.code ?? 'REQUEST_FAILED',
-        payload.error?.message ?? `Request failed with status ${resp.status}`,
-        payload.error?.details,
-      );
-    } catch {
-      return new ApiError(resp.status, 'REQUEST_FAILED', `Request failed with status ${resp.status}`);
-    }
-  }
-
-  async download(path: string): Promise<{ blob: Blob; filename: string }> {
-    const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers.Authorization = `Bearer ${this.accessToken}`;
-    }
-    let resp: Response;
-    try {
-      resp = await fetch(apiUrl(path), { method: 'GET', headers });
-    } catch {
-      throw new NetworkError();
-    }
-    if (!resp.ok) {
-      throw await this.errorFrom(resp);
-    }
-    const disposition = resp.headers.get('Content-Disposition') ?? '';
-    const match = /filename="([^"]+)"/.exec(disposition);
-    return { blob: await resp.blob(), filename: match?.[1] ?? 'evidence.pdf' };
+    return false;
+  } catch {
+    return false;
   }
 }
 
-export const api = new ApiClient();
+export const api: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const access = providers?.getAccessToken() ?? null;
+  const isAuthCall = typeof config.url === 'string' && config.url.includes('/auth/');
+  const expired = accessExpiresAt > 0 && Date.now() >= accessExpiresAt;
+
+  if (access && (isAuthCall || !expired)) {
+    config.headers.set('Authorization', `Bearer ${access}`);
+  } else if (access && expired && !isAuthCall) {
+    const ok = await refreshTokens();
+    const fresh = providers?.getAccessToken();
+    if (ok && fresh) {
+      config.headers.set('Authorization', `Bearer ${fresh}`);
+    }
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const original = error.config as
+      | (InternalAxiosRequestConfig & { _retried?: boolean })
+      | undefined;
+    const status = error.response?.status;
+    const isAuthCall = typeof original?.url === 'string' && original.url.includes('/auth/');
+
+    if (status === 401 && original && !original._retried && !isAuthCall) {
+      original._retried = true;
+      const ok = await refreshTokens();
+      if (ok) {
+        const fresh = providers?.getAccessToken();
+        if (fresh) {
+          original.headers.set('Authorization', `Bearer ${fresh}`);
+          return api(original);
+        }
+      }
+      providers?.onSessionExpired();
+    }
+    throw error;
+  },
+);
+
+export async function post<T>(url: string, body?: unknown): Promise<T> {
+  try {
+    const resp = await api.post<Envelope<T>>(url, body ?? {});
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function put<T>(url: string, body?: unknown): Promise<T> {
+  try {
+    const resp = await api.put<Envelope<T>>(url, body ?? {});
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function patch<T>(url: string, body?: unknown): Promise<T> {
+  try {
+    const resp = await api.patch<Envelope<T>>(url, body ?? {});
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function get<T>(url: string): Promise<T> {
+  try {
+    const resp = await api.get<Envelope<T>>(url);
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function del<T>(url: string): Promise<T> {
+  try {
+    const resp = await api.delete<Envelope<T>>(url);
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function download(url: string): Promise<{ blob: Blob }> {
+  try {
+    const resp = await api.get(url, { responseType: 'blob' });
+    return { blob: resp.data as Blob };
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export async function rawAuth<T>(url: string, body: unknown): Promise<T> {
+  try {
+    const resp = await axios.post<Envelope<T>>(`${API_BASE_URL}${url}`, body, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000,
+    });
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}

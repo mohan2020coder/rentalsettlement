@@ -6,7 +6,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateTenancyRequest is the create tenancy payload.
+// CreateTenancyRequest is the create tenancy payload. The invited user must be
+// an existing registered TENANT account; the platform manages the invitation
+// entirely in-app (no external email or pin).
 type CreateTenancyRequest struct {
 	PropertyID           uuid.UUID `json:"property_id"`
 	InvitedEmail         string    `json:"invited_email"`
@@ -20,10 +22,9 @@ type CreateTenancyRequest struct {
 	AgreementReference   string    `json:"agreement_reference"`
 }
 
-// AcceptTenancyRequest is the accept invitation payload.
-type AcceptTenancyRequest struct {
-	InviteToken string `json:"invite_token"`
-}
+// AcceptTenancyRequest is empty: the invite is accepted in-app by the assigned
+// tenant, so no secret token is presented.
+type AcceptTenancyRequest struct{}
 
 // UpdateStatusRequest is the status transition payload.
 type UpdateStatusRequest struct {

@@ -49,6 +49,11 @@ func main() {
 		log.Info("demo data ready", "email", seeds.DemoLandlordEmail, "password", seeds.DemoPassword)
 	}
 
+	if err := seeds.SeedMarketplaceDemo(context.Background(), db); err != nil {
+		fatal("marketplace demo seeding failed: " + err.Error())
+	}
+	log.Info("marketplace demo data ready")
+
 	st, err := storage.NewLocal(cfg.Storage.Root)
 	if err != nil {
 		fatal("storage: " + err.Error())

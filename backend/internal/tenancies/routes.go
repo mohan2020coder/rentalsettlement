@@ -24,7 +24,6 @@ func RegisterRoutes(group *gin.RouterGroup, db *gorm.DB, propRepo *properties.Re
 	g.POST("", h.Create)
 	g.GET("", h.List)
 	g.GET("/:id", h.Get)
-	g.POST("/:id/invite", h.RegenerateInvite)
 	g.POST("/:id/accept", h.Accept)
 	g.POST("/:id/status", h.UpdateStatus)
 }

@@ -79,4 +79,3 @@ mobile/       React Native app (source layout scaffolded)
 docs/         documentation
 migrations/   (inside backend) incremental SQL
 ```
-

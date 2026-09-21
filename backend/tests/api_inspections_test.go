@@ -10,11 +10,11 @@ import (
 )
 
 func TestInspectionLifecycle(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Landlord creates a move-in inspection from the template.
 	resp := Perform(app, http.MethodPost, "/api/v1/inspections/tenancy/"+tenancyID+"/move-in", `{"notes":"Initial state"}`, landlordAccess)
@@ -94,11 +94,11 @@ func TestInspectionLifecycle(t *testing.T) {
 }
 
 func TestMoveOutInspectionFlow(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Move-in first.
 	resp := Perform(app, http.MethodPost, "/api/v1/inspections/tenancy/"+tenancyID+"/move-in", `{}`, landlordAccess)

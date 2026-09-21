@@ -39,6 +39,25 @@ func (h *Handler) Generate(c *gin.Context) {
 	response.Created(c, set)
 }
 
+// Regenerate handles POST /api/v1/settlements/tenancy/:tenancyID/regenerate.
+func (h *Handler) Regenerate(c *gin.Context) {
+	tenancyID, ok := idParam(c, "tenancyID")
+	if !ok {
+		return
+	}
+	var req GenerateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "INVALID_JSON", "Malformed request body", nil)
+		return
+	}
+	set, err := h.svc.Regenerate(c.Request.Context(), authctx.UserID(c), tenancyID, req)
+	if err != nil {
+		response.Abort(c, err)
+		return
+	}
+	response.OK(c, set, nil)
+}
+
 // Get handles GET /api/v1/settlements/tenancy/:tenancyID.
 func (h *Handler) Get(c *gin.Context) {
 	tenancyID, ok := idParam(c, "tenancyID")

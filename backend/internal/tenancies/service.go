@@ -2,8 +2,6 @@ package tenancies
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"strings"
 	"time"
 
@@ -34,8 +32,9 @@ func NewService(repo *Repository, propRepo *properties.Repository, userRepo *use
 	return &Service{repo: repo, propRepo: propRepo, userRepo: userRepo, billing: billingSvc, entitlements: entitlements, audit: auditSvc, notify: notify}
 }
 
-// Create validates input, verifies property ownership and plan limit, then
-// creates an INVITED tenancy with a fresh invitation token.
+// Create validates input, resolves the invited tenant's registered account,
+// verifies property ownership and plan limit, then creates an INVITED tenancy
+// managed entirely in-app.
 func (s *Service) Create(ctx context.Context, landlordID uuid.UUID, req CreateTenancyRequest) (*TenancyDTO, error) {
 	if details := validateCreate(req); len(details) > 0 {
 		return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: details}
@@ -49,6 +48,11 @@ func (s *Service) Create(ctx context.Context, landlordID uuid.UUID, req CreateTe
 		return nil, response.NewError(403, "FORBIDDEN", "You do not own this property")
 	}
 
+	invitee, err := s.userRepo.ByEmail(ctx, req.InvitedEmail)
+	if err != nil || invitee.Role != users.RoleTenant || invitee.Status != users.StatusActive {
+		return nil, response.NewError(400, "INVITEE_NOT_FOUND", "No active tenant account is registered for this email")
+	}
+
 	current, err := s.repo.ActiveCountForLandlord(ctx, landlordID)
 	if err != nil {
 		return nil, err
@@ -57,24 +61,19 @@ func (s *Service) Create(ctx context.Context, landlordID uuid.UUID, req CreateTe
 		return nil, err
 	}
 
-	token, err := newInviteToken()
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().UTC()
-
-	email := strings.ToLower(strings.TrimSpace(req.InvitedEmail))
+	email := strings.ToLower(strings.TrimSpace(invitee.Email))
 	tenancy := &Tenancy{
 		PropertyID:           prop.ID,
 		LandlordID:           landlordID,
+		TenantID:             &invitee.ID,
 		InvitedEmail:         &email,
-		InviteToken:          &token,
 		InvitedAt:            &now,
 		StartDate:            dateTime(req.StartDate),
 		EndDate:              dateTime(req.EndDate),
 		MonthlyRentMinor:     req.MonthlyRentMinor,
 		SecurityDepositMinor: req.SecurityDepositMinor,
-		Currency:             req.Currency,
+		Currency:             defaultCurrency(req.Currency),
 		NoticePeriodDays:     req.NoticePeriodDays,
 		RentDueDay:           req.RentDueDay,
 		AgreementReference:   nullableString(req.AgreementReference),
@@ -92,44 +91,15 @@ func (s *Service) Create(ctx context.Context, landlordID uuid.UUID, req CreateTe
 		EntityType: "tenancy",
 		EntityID:   &tenancy.ID,
 	})
+	_ = s.notify.Notify(ctx, invitee.ID, notifications.TypeInvitation, "New tenancy invitation",
+		"Landlord invited you to rent "+prop.PropertyName+". Accept or decline in-app.", "tenancy", &tenancy.ID)
 
 	return toDTO(tenancy), nil
 }
 
-// RegenerateInvite refreshes the invitation token for an invited tenancy.
-func (s *Service) RegenerateInvite(ctx context.Context, landlordID uuid.UUID, tenancyID uuid.UUID) (*TenancyDTO, error) {
-	t, err := s.repo.ByID(ctx, tenancyID)
-	if err != nil {
-		return nil, err
-	}
-	if t.LandlordID != landlordID {
-		return nil, response.NewError(403, "FORBIDDEN", "You do not have access to this tenancy")
-	}
-	if t.Status != StatusInvited {
-		return nil, response.NewError(400, "INVALID_STATE", "Invitation can only be regenerated for a pending tenancy")
-	}
-	token, err := newInviteToken()
-	if err != nil {
-		return nil, err
-	}
-	t.InviteToken = &token
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, err
-	}
-	_ = s.audit.Record(ctx, audit.Entry{
-		ActorID:    &landlordID,
-		TenancyID:  &t.ID,
-		Action:     audit.ActionTenancyInvited,
-		EntityType: "tenancy",
-		EntityID:   &t.ID,
-	})
-	return toDTO(t), nil
-}
-
-// Accept lets the invited tenant join an INVITED tenancy. The user must be
-// role TENANT, must present a valid invite token, and the user's email must
-// match the invited email.
-func (s *Service) Accept(ctx context.Context, tenantID uuid.UUID, tenancyID uuid.UUID, token string) (*TenancyDTO, error) {
+// Accept lets the assigned tenant join an INVITED tenancy. No invite token is
+// needed: ownership is proven by being the tenant on the tenancy record.
+func (s *Service) Accept(ctx context.Context, tenantID uuid.UUID, tenancyID uuid.UUID) (*TenancyDTO, error) {
 	user, err := s.userRepo.ByID(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -138,19 +108,18 @@ func (s *Service) Accept(ctx context.Context, tenantID uuid.UUID, tenancyID uuid
 		return nil, response.NewError(403, "FORBIDDEN", "Only tenants can accept a tenancy invitation")
 	}
 
-	t, err := s.repo.ActiveByToken(ctx, token)
+	t, err := s.repo.ByID(ctx, tenancyID)
 	if err != nil {
 		return nil, err
 	}
-	if t.ID != tenancyID {
-		return nil, response.NewError(404, "TENANCY_NOT_FOUND", "Invitation not found")
+	if t.Status != StatusInvited {
+		return nil, response.NewError(400, "INVALID_STATE", "This tenancy is not awaiting acceptance")
 	}
-	if !strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(deref(t.InvitedEmail))) {
-		return nil, response.NewError(403, "INVITE_EMAIL_MISMATCH", "This invitation was issued to a different email")
+	if t.TenantID == nil || *t.TenantID != tenantID {
+		return nil, response.NewError(403, "FORBIDDEN", "This invitation was issued to another tenant")
 	}
 
 	now := time.Now().UTC()
-	t.TenantID = &tenantID
 	t.AcceptedAt = &now
 	t.Status = StatusActive
 	if err := s.repo.Update(ctx, t); err != nil {
@@ -232,9 +201,12 @@ func (s *Service) UpdateStatus(ctx context.Context, userID uuid.UUID, tenancyID 
 			return nil, response.NewError(400, "INVALID_STATE", "Tenancy must be NOTICE_GIVEN or ACTIVE to move out")
 		}
 	case StatusCancelled:
-		// Landlord (or the tenant, if nothing started) can cancel an invited tenancy.
+		isTenant := t.TenantID != nil && *t.TenantID == userID
 		if t.Status != StatusInvited && t.Status != StatusActive && t.Status != StatusNoticeGiven {
 			return nil, response.NewError(400, "INVALID_STATE", "This tenancy cannot be cancelled")
+		}
+		if isTenant && t.Status != StatusInvited {
+			return nil, response.NewError(403, "FORBIDDEN", "Only the landlord can cancel an active or ongoing tenancy; the tenant may decline only an invitation")
 		}
 	case StatusSettled:
 		if t.Status != StatusMoveOut {
@@ -307,14 +279,6 @@ func validateCreate(req CreateTenancyRequest) map[string]any {
 	return details
 }
 
-func newInviteToken() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
 func dateTime(s string) *time.Time {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -326,17 +290,18 @@ func dateTime(s string) *time.Time {
 	return &parsed
 }
 
+func defaultCurrency(c string) string {
+	c = strings.ToUpper(strings.TrimSpace(c))
+	if c == "" {
+		return "INR"
+	}
+	return c
+}
+
 func nullableString(s string) *string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
 	return &s
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

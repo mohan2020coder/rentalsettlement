@@ -60,32 +60,13 @@ func (h *Handler) Get(c *gin.Context) {
 	response.OK(c, toDTO(dto), nil)
 }
 
-// RegenerateInvite handles POST /api/v1/tenancies/:id/invite.
-func (h *Handler) RegenerateInvite(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	dto, err := h.svc.RegenerateInvite(c.Request.Context(), authctx.UserID(c), id)
-	if err != nil {
-		response.Abort(c, err)
-		return
-	}
-	response.OK(c, dto, nil)
-}
-
 // Accept handles POST /api/v1/tenancies/:id/accept.
 func (h *Handler) Accept(c *gin.Context) {
 	id, ok := parseID(c)
 	if !ok {
 		return
 	}
-	body, err := readBody(c)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "INVALID_JSON", "Malformed request body", nil)
-		return
-	}
-	dto, err := h.svc.Accept(c.Request.Context(), authctx.UserID(c), id, body)
+	dto, err := h.svc.Accept(c.Request.Context(), authctx.UserID(c), id)
 	if err != nil {
 		response.Abort(c, err)
 		return
@@ -119,13 +100,4 @@ func parseID(c *gin.Context) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return id, true
-}
-
-func readBody(c *gin.Context) (string, error) {
-	var body map[string]any
-	if err := c.ShouldBindJSON(&body); err != nil {
-		return "", err
-	}
-	token, _ := body["invite_token"].(string)
-	return token, nil
 }

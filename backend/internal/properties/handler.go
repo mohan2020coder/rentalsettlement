@@ -1,6 +1,7 @@
 package properties
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,33 @@ func (h *Handler) Create(c *gin.Context) {
 // List handles GET /api/v1/properties.
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.svc.List(c.Request.Context(), authctx.UserID(c))
+	if err != nil {
+		response.Abort(c, err)
+		return
+	}
+	response.OK(c, list, nil)
+}
+
+// ListListed handles GET /api/v1/properties/listed.
+func (h *Handler) ListListed(c *gin.Context) {
+	var maxRent *int64
+	if v := c.Query("max_rent_minor"); v != "" {
+		if n, err := parseInt64(v); err == nil {
+			maxRent = &n
+		}
+	}
+	var bedrooms *int
+	if v := c.Query("bedrooms"); v != "" {
+		if n, err := parseInt(v); err == nil {
+			bedrooms = &n
+		}
+	}
+	list, err := h.svc.ListListed(c.Request.Context(), ListingFilter{
+		City:         c.Query("city"),
+		MaxRentMinor: maxRent,
+		Bedrooms:     bedrooms,
+		Furnishing:   c.Query("furnishing_status"),
+	})
 	if err != nil {
 		response.Abort(c, err)
 		return
@@ -87,4 +115,16 @@ func parseID(c *gin.Context) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+func parseInt(v string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(v, "%d", &n)
+	return n, err
+}
+
+func parseInt64(v string) (int64, error) {
+	var n int64
+	_, err := fmt.Sscanf(v, "%d", &n)
+	return n, err
 }

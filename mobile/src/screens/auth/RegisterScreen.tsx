@@ -1,56 +1,79 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-
-import { ApiError } from '../../api/client';
-import { Button, Field, Screen } from '../../components';
-import { useAuth } from '../../store/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Button, Input, Screen } from '../../components/ui';
+import { useAuth } from '../../auth/AuthContext';
+import { ApiClientError } from '../../api/client';
+import { RootStackParamList } from '../../navigation/types';
 import { theme } from '../../theme';
-import { Role } from '../../types';
 
-export function RegisterScreen({ navigation }: any) {
-  const { register } = useAuth();
+type Role = 'LANDLORD' | 'TENANT';
+
+export default function RegisterScreen() {
+  const { signUp, signingIn } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('TENANT');
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const onSubmit = async () => {
-    setError(null);
-    if (!name.trim() || !email.trim()) {
-      setError('Fill in your name and email.');
-      return;
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    setBusy(true);
+  const validate = (): string | null => {
+    if (name.trim().length < 2) return 'Please enter your name';
+    if (!/^\S+@\S+\.\S+$/.test(email)) return 'Please enter a valid email';
+    if (password.length < 8) return 'Password must be at least 8 characters';
+    return null;
+  };
+
+  const submit = async () => {
+    const problem = validate();
+    setError(problem);
+    if (problem) return;
     try {
-      await register(name.trim(), email.trim(), password, role);
+      await signUp({ name: name.trim(), email: email.trim(), phone: phone || undefined, password, role });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Registration failed. Try again.');
-    } finally {
-      setBusy(false);
+      setError(err instanceof ApiClientError ? err.message : 'Could not register');
     }
   };
 
-  return (
-    <Screen>
-      <Text style={styles.heading}>Create your account</Text>
+  const roleBtn = (r: Role, label: string) => (
+    <Button
+      label={label}
+      variant={role === r ? 'primary' : 'secondary'}
+      small
+      onPress={() => setRole(r)}
+    />
+  );
 
-      <Field label="Full name" value={name} onChangeText={setName} placeholder="Your name" autoComplete="name" />
-      <Field
+  return (
+    <Screen keyboard scroll>
+      <Text style={styles.title}>Create an account</Text>
+      <Text style={styles.subtitle}>Pick the role that matches how you use the platform.</Text>
+
+      <View style={styles.roleRow}>
+        {roleBtn('LANDLORD', 'Landlord')}
+        {roleBtn('TENANT', 'Tenant')}
+      </View>
+
+      <Input label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
+      <Input
         label="Email"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
-        autoComplete="email"
         placeholder="you@example.com"
       />
-      <Field
+      <Input
+        label="Phone (optional)"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+        placeholder="+91 "
+      />
+      <Input
         label="Password"
         value={password}
         onChangeText={setPassword}
@@ -58,71 +81,30 @@ export function RegisterScreen({ navigation }: any) {
         placeholder="At least 8 characters"
       />
 
-      <Text style={styles.roleLabel}>I am a</Text>
-      <View style={styles.roleRow}>
-        {(['LANDLORD', 'TENANT'] as Role[]).map((r) => (
-          <Pressable
-            key={r}
-            onPress={() => setRole(r)}
-            style={[styles.roleChip, role === r && styles.roleChipActive]}
-          >
-            <Text style={[styles.roleChipText, role === r && styles.roleChipTextActive]}>
-              {r === 'LANDLORD' ? 'Landlord' : 'Tenant'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Button title="Create account" onPress={onSubmit} loading={busy} />
-      <Button title="Back to sign in" variant="ghost" onPress={() => navigation.navigate('Login')} />
+      <Button label="Register" onPress={() => void submit()} loading={signingIn} />
+
+      <Pressable style={styles.footer} onPress={() => navigation.goBack()}>
+        <Text style={styles.footerText}>
+          Already have an account? <Text style={styles.footerLink}>Sign in</Text>
+        </Text>
+      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    fontSize: theme.text.heading,
-    fontWeight: '700',
-    color: theme.colors.text,
-    marginVertical: theme.spacing.lg,
-  },
-  roleLabel: {
-    fontSize: theme.text.caption,
+  title: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text },
+  subtitle: {
     color: theme.colors.textSubtle,
-    fontWeight: '500',
-    marginBottom: theme.spacing.xs,
-  },
-  roleRow: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.md,
-  },
-  roleChip: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  roleChipActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  roleChipText: {
     fontSize: theme.text.body,
-    color: theme.colors.text,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.xl,
   },
-  roleChipTextActive: {
-    color: theme.colors.white,
-    fontWeight: '700',
-  },
-  error: {
-    color: theme.colors.danger,
-    fontSize: theme.text.caption,
-    marginBottom: theme.spacing.md,
-  },
+  roleRow: { flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.lg },
+  error: { color: theme.colors.danger, fontSize: theme.text.caption, marginBottom: theme.spacing.md },
+  footer: { marginTop: theme.spacing.xl, alignItems: 'center' },
+  footerText: { color: theme.colors.textSubtle, fontSize: theme.text.body },
+  footerLink: { color: theme.colors.primary, fontWeight: '700' },
 });

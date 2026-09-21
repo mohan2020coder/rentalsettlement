@@ -18,6 +18,7 @@ const (
 	TypeMaintenance = "MAINTENANCE"
 	TypeDeduction   = "DEDUCTION"
 	TypeDispute     = "DISPUTE"
+	TypeApplication = "APPLICATION"
 	TypeSettlement  = "SETTLEMENT"
 	TypeBilling     = "BILLING"
 )

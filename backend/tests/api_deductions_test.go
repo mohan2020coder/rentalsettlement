@@ -42,11 +42,11 @@ func moveOutTenancy(t *testing.T, app *server.App, landlordAccess, tenantAccess,
 }
 
 func TestDeductionAcceptFlow(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 	moveOutTenancy(t, app, landlordAccess, tenantAccess, tenancyID)
 
 	// Landlord proposes a deduction.
@@ -83,11 +83,11 @@ func TestDeductionAcceptFlow(t *testing.T) {
 }
 
 func TestDisputeNegotiationFlow(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 	moveOutTenancy(t, app, landlordAccess, tenantAccess, tenancyID)
 
 	// Landlord proposes a deduction.
@@ -145,11 +145,11 @@ func TestDisputeNegotiationFlow(t *testing.T) {
 }
 
 func TestDisputeWithdrawFlow(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 	moveOutTenancy(t, app, landlordAccess, tenantAccess, tenancyID)
 
 	resp := Perform(app, http.MethodPost, "/api/v1/deductions/tenancy/"+tenancyID, `{"category":"OTHER","title":"Misc","claimed_amount_minor":10000,"currency":"INR"}`, landlordAccess)

@@ -50,20 +50,24 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateProper
 	}
 
 	prop := &Property{
-		LandlordID:       userID,
-		PropertyName:     strings.TrimSpace(req.PropertyName),
-		PropertyType:     req.PropertyType,
-		AddressLine1:     nullableString(req.AddressLine1),
-		AddressLine2:     nullableString(req.AddressLine2),
-		Locality:         nullableString(req.Locality),
-		City:             nullableString(req.City),
-		State:            nullableString(req.State),
-		PostalCode:       nullableString(req.PostalCode),
-		Bedrooms:         req.Bedrooms,
-		Bathrooms:        req.Bathrooms,
-		FurnishingStatus: nullableString(req.FurnishingStatus),
-		Description:      nullableString(req.Description),
-		Status:           StatusActive,
+		LandlordID:           userID,
+		PropertyName:         strings.TrimSpace(req.PropertyName),
+		PropertyType:         req.PropertyType,
+		AddressLine1:         nullableString(req.AddressLine1),
+		AddressLine2:         nullableString(req.AddressLine2),
+		Locality:             nullableString(req.Locality),
+		City:                 nullableString(req.City),
+		State:                nullableString(req.State),
+		PostalCode:           nullableString(req.PostalCode),
+		Bedrooms:             req.Bedrooms,
+		Bathrooms:            req.Bathrooms,
+		FurnishingStatus:     nullableString(req.FurnishingStatus),
+		Description:          nullableString(req.Description),
+		Status:               StatusActive,
+		Listed:               req.Listed,
+		MonthlyRentMinor:     req.MonthlyRentMinor,
+		SecurityDepositMinor: req.SecurityDepositMinor,
+		Currency:             defaultCurrency(req.Currency),
 	}
 	if err := s.repo.Create(ctx, prop); err != nil {
 		return nil, err
@@ -123,7 +127,16 @@ func (s *Service) Update(ctx context.Context, userID uuid.UUID, propertyID uuid.
 		}
 		p.PropertyType = req.PropertyType
 	}
+	if req.Status != "" {
+		if err := validator.OneOf("status", req.Status, StatusActive, StatusInactive); err != nil {
+			return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"status": err.Error()}}
+		}
+	}
 	applyOptionalStrings(p, req)
+
+	if p.Listed && p.MonthlyRentMinor <= 0 {
+		return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"listed": "a monthly rent is required to list the property on the marketplace"}}
+	}
 
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
@@ -133,8 +146,23 @@ func (s *Service) Update(ctx context.Context, userID uuid.UUID, propertyID uuid.
 		Action:     audit.ActionPropertyUpdated,
 		EntityType: "property",
 		EntityID:   &p.ID,
+		Metadata:   map[string]any{"listed": p.Listed},
 	})
 	return toDTO(p), nil
+}
+
+// ListListed returns the tenant-facing catalog of available properties.
+// Only ACTIVE properties that the landlord explicitly listed are shown.
+func (s *Service) ListListed(ctx context.Context, filter ListingFilter) ([]ListingDTO, error) {
+	props, err := s.repo.ListListed(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ListingDTO, 0, len(props))
+	for i := range props {
+		out = append(out, *toListingDTO(&props[i]))
+	}
+	return out, nil
 }
 
 func applyOptionalStrings(p *Property, req UpdatePropertyRequest) {
@@ -157,9 +185,26 @@ func applyOptionalStrings(p *Property, req UpdatePropertyRequest) {
 	if req.Bathrooms != nil {
 		p.Bathrooms = req.Bathrooms
 	}
-	if req.Status != "" {
-		p.Status = req.Status
+	if req.Listed != nil {
+		p.Listed = *req.Listed
 	}
+	if req.MonthlyRentMinor != nil {
+		p.MonthlyRentMinor = *req.MonthlyRentMinor
+	}
+	if req.SecurityDepositMinor != nil {
+		p.SecurityDepositMinor = *req.SecurityDepositMinor
+	}
+	if req.Currency != nil {
+		p.Currency = defaultCurrency(*req.Currency)
+	}
+}
+
+func defaultCurrency(c string) string {
+	c = strings.ToUpper(strings.TrimSpace(c))
+	if c == "" {
+		return "INR"
+	}
+	return c
 }
 
 func nullableString(s string) *string {

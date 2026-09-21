@@ -3,6 +3,7 @@ package seeds
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -89,22 +90,25 @@ func SeedDemo(ctx context.Context, db *gorm.DB) error {
 	// Property.
 	semifurnished := properties.SemiFurnished
 	prop := properties.Property{
-		ID:               demoID("property"),
-		LandlordID:       landlord.ID,
-		PropertyName:     "Lakeview Apartment, 2BHK",
-		PropertyType:     properties.TypeApartment,
-		AddressLine1:     strPtr("Building 42, 100 Feet Road"),
-		Locality:         strPtr("Koramangala 5th Block"),
-		City:             strPtr("Bengaluru"),
-		State:            strPtr("Karnataka"),
-		PostalCode:       strPtr("560095"),
-		Bedrooms:         intPtr(2),
-		Bathrooms:        intPtr(2),
-		FurnishingStatus: &semifurnished,
-		Description:      strPtr("Semi-furnished 2 BHK with a balcony; gated community."),
-		Status:           properties.StatusActive,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                   demoID("property"),
+		LandlordID:           landlord.ID,
+		PropertyName:         "Lakeview Apartment, 2BHK",
+		PropertyType:         properties.TypeApartment,
+		AddressLine1:         strPtr("Building 42, 100 Feet Road"),
+		Locality:             strPtr("Koramangala 5th Block"),
+		City:                 strPtr("Bengaluru"),
+		State:                strPtr("Karnataka"),
+		PostalCode:           strPtr("560095"),
+		Bedrooms:             intPtr(2),
+		Bathrooms:            intPtr(2),
+		FurnishingStatus:     &semifurnished,
+		Description:          strPtr("Semi-furnished 2 BHK with a balcony; gated community."),
+		Status:               properties.StatusActive,
+		MonthlyRentMinor:     3000000,
+		SecurityDepositMinor: 10000000,
+		Currency:             "INR",
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 	if err := db.Create(&prop).Error; err != nil {
 		return err
@@ -252,4 +256,67 @@ func optStr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// SeedMarketplaceDemo adds a listed (tenant-discoverable) property so the
+// marketplace flow can be exercised end to end. Unlike SeedDemo it runs even
+// when the demo accounts already exist, and is idempotent.
+func SeedMarketplaceDemo(ctx context.Context, db *gorm.DB) error {
+	var landlord users.User
+	if err := db.Where("email = ?", DemoLandlordEmail).First(&landlord).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	// Backfill rental offer terms on the existing demo property and keep it off
+	// the catalog (it is under an active tenancy).
+	if err := db.Model(&properties.Property{}).
+		Where("id = ?", demoID("property")).
+		Updates(map[string]any{
+			"monthly_rent_minor":     3000000,
+			"security_deposit_minor": 10000000,
+			"currency":               "INR",
+			"listed":                 false,
+		}).Error; err != nil {
+		return err
+	}
+
+	var existing int64
+	if err := db.Model(&properties.Property{}).Where("id = ?", demoID("property-listed")).Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	furnished := properties.Furnished
+	now := time.Now().UTC()
+	listedProp := properties.Property{
+		ID:                   demoID("property-listed"),
+		LandlordID:           landlord.ID,
+		PropertyName:         "Sunrise Studio, 1BHK",
+		PropertyType:         properties.TypeApartment,
+		AddressLine1:         strPtr("Plot 7, 27th Main"),
+		Locality:             strPtr("HSR Layout Sector 1"),
+		City:                 strPtr("Bengaluru"),
+		State:                strPtr("Karnataka"),
+		PostalCode:           strPtr("560102"),
+		Bedrooms:             intPtr(1),
+		Bathrooms:            intPtr(1),
+		FurnishingStatus:     &furnished,
+		Description:          strPtr("Furnished 1 BHK studio; walking distance to the metro and tech parks."),
+		Status:               properties.StatusActive,
+		Listed:               true,
+		MonthlyRentMinor:     4500000,
+		SecurityDepositMinor: 15000000,
+		Currency:             "INR",
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	if err := db.Create(&listedProp).Error; err != nil {
+		return err
+	}
+	return nil
 }

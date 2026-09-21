@@ -18,6 +18,7 @@ func RegisterRoutes(group *gin.RouterGroup, db *gorm.DB, userRepo *users.Reposit
 	g := group.Group("/properties")
 	g.POST("", h.Create)
 	g.GET("", h.List)
+	g.GET("/listed", h.ListListed)
 	g.GET("/:id", h.Get)
 	g.PATCH("/:id", h.Update)
 }

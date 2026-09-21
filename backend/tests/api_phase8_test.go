@@ -9,11 +9,11 @@ import (
 )
 
 func TestAuditTrailEndpoints(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	_, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Landlord creates a property-level record early by updating status flow:
 	// a move-out notification wraps several audit entries on the tenancy.
@@ -47,11 +47,11 @@ func TestAuditTrailEndpoints(t *testing.T) {
 }
 
 func TestNotificationsEndpoints(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	_, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 
 	// Invitation created a notification for the tenant.
 	resp := Perform(app, http.MethodGet, "/api/v1/notifications", "", tenantAccess)
@@ -90,11 +90,11 @@ func TestNotificationsEndpoints(t *testing.T) {
 }
 
 func TestEvidencePdfDownload(t *testing.T) {
-	app, db, cleanup := NewTestApp(t)
+	app, _, cleanup := NewTestApp(t)
 	defer cleanup()
 
 	landlordAccess, tenantAccess, tenancyID := setupParties(t, app)
-	acceptTenancy(t, app, db, tenancyID, tenantAccess)
+	acceptTenancy(t, app, tenancyID, tenantAccess)
 	moveOutTenancy(t, app, landlordAccess, tenantAccess, tenancyID)
 
 	// Add some records so the dossier is non-trivial.

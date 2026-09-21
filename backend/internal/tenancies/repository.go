@@ -58,21 +58,6 @@ func (r *Repository) ActiveCountForLandlord(ctx context.Context, landlordID uuid
 	return count, err
 }
 
-// ActiveByToken finds the active tenancy matching an invitation token.
-func (r *Repository) ActiveByToken(ctx context.Context, token string) (*Tenancy, error) {
-	var t Tenancy
-	err := r.db.WithContext(ctx).
-		Where("invite_token = ? AND status = ?", token, StatusInvited).
-		First(&t).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, response.NewError(404, "TENANCY_NOT_FOUND", "Invitation not found or already used")
-		}
-		return nil, err
-	}
-	return &t, nil
-}
-
 // Update persists tenancy changes.
 func (r *Repository) Update(ctx context.Context, t *Tenancy) error {
 	return r.db.WithContext(ctx).Save(t).Error
