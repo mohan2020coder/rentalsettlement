@@ -56,7 +56,10 @@ export default function NewClaimScreen({
 
   return (
     <Screen keyboard scroll>
-      <Text style={styles.pageTitle}>Propose a deduction</Text>
+      <Text style={styles.pageTitle}>Propose a Deduction</Text>
+      <Text style={styles.hint}>
+        Claims are reviewed by the tenant and, once agreed, flow into the settlement statement.
+      </Text>
       <Input
         label="Title"
         value={title}
@@ -71,6 +74,7 @@ export default function NewClaimScreen({
         numberOfLines={4}
         style={styles.multiline}
         placeholder="Evidence and context for the claim"
+        icon="create-outline"
       />
       <Input
         label="Claimed amount (₹)"
@@ -78,6 +82,7 @@ export default function NewClaimScreen({
         onChangeText={setAmount}
         keyboardType="decimal-pad"
         placeholder="5000"
+        icon="cash-outline"
       />
 
       <Text style={styles.label}>Category</Text>
@@ -86,7 +91,7 @@ export default function NewClaimScreen({
           <Button
             key={c}
             label={c.replace(/_/g, ' ')}
-            variant={category === c ? 'primary' : 'secondary'}
+            variant={category === c ? 'primary' : 'ghost'}
             small
             onPress={() => setCategory(c)}
           />
@@ -94,13 +99,14 @@ export default function NewClaimScreen({
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Button label="Propose claim" onPress={() => void submit()} loading={submitting} />
+      <Button label="Propose Claim" icon="send-outline" onPress={() => void submit()} loading={submitting} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text },
+  pageTitle: { fontSize: theme.text.screenTitle, fontWeight: '800', color: theme.colors.text },
+  hint: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg },
   label: {
     fontSize: theme.text.caption,
     color: theme.colors.textSubtle,

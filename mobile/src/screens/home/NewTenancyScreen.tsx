@@ -4,7 +4,7 @@ import { RootStackScreenProps } from '../../navigation/types';
 import { get, post, extractError, ApiClientError } from '../../api/client';
 import { Property, Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { Button, Card, EmptyState, ErrorView, Input, LoadingView, Screen } from '../../components/ui';
+import { Button, Card, EmptyState, ErrorView, Input, LoadingView, Screen, ScreenTitle } from '../../components/ui';
 import { theme } from '../../theme';
 
 export default function NewTenancyScreen({ navigation }: RootStackScreenProps<'NewTenancy'>) {
@@ -67,7 +67,8 @@ export default function NewTenancyScreen({ navigation }: RootStackScreenProps<'N
 
   return (
     <Screen keyboard scroll>
-      <Text style={styles.pageTitle}>New tenancy</Text>
+      <ScreenTitle title="New Tenancy" />
+      <Text style={styles.hint}>Pick a property, set the terms, and invite the tenant by email.</Text>
       {properties.data && properties.data.length > 0 ? (
         <>
           <Text style={styles.label}>Property</Text>
@@ -125,6 +126,7 @@ export default function NewTenancyScreen({ navigation }: RootStackScreenProps<'N
         </>
       ) : (
         <EmptyState
+          icon="business-outline"
           title="You need a property first"
           subtitle="Add a property before inviting tenants."
         />
@@ -134,7 +136,12 @@ export default function NewTenancyScreen({ navigation }: RootStackScreenProps<'N
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text, marginBottom: theme.spacing.md },
+  hint: {
+    color: theme.colors.textSubtle,
+    fontSize: theme.text.caption,
+    marginTop: 2,
+    marginBottom: theme.spacing.md,
+  },
   label: {
     fontSize: theme.text.caption,
     color: theme.colors.textSubtle,

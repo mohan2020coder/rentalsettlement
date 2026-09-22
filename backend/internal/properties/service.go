@@ -10,6 +10,7 @@ import (
 	"rental-settlement/backend/internal/billing"
 	"rental-settlement/backend/internal/users"
 	"rental-settlement/backend/pkg/response"
+	"rental-settlement/backend/pkg/storage"
 	"rental-settlement/backend/pkg/validator"
 )
 
@@ -68,6 +69,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateProper
 		MonthlyRentMinor:     req.MonthlyRentMinor,
 		SecurityDepositMinor: req.SecurityDepositMinor,
 		Currency:             defaultCurrency(req.Currency),
+		Photo:                nullableString(req.Photo),
 	}
 	if err := s.repo.Create(ctx, prop); err != nil {
 		return nil, err
@@ -120,6 +122,11 @@ func (s *Service) Update(ctx context.Context, userID uuid.UUID, propertyID uuid.
 	}
 	if req.PropertyName != "" {
 		p.PropertyName = strings.TrimSpace(req.PropertyName)
+	}
+	if req.Photo != nil && *req.Photo != "" {
+		if err := storage.ValidateKey(*req.Photo); err != nil {
+			return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"photo": "photo must reference platform storage"}}
+		}
 	}
 	if req.PropertyType != "" {
 		if err := validator.OneOf("property_type", req.PropertyType, TypeApartment, TypeHouse, TypeVilla, TypePG, TypeOther); err != nil {
@@ -179,6 +186,14 @@ func applyOptionalStrings(p *Property, req UpdatePropertyRequest) {
 	assign(&p.PostalCode, req.PostalCode)
 	assign(&p.FurnishingStatus, req.FurnishingStatus)
 	assign(&p.Description, req.Description)
+	if req.Photo != nil {
+		if *req.Photo == "" {
+			p.Photo = nil
+		} else {
+			v := *req.Photo
+			p.Photo = &v
+		}
+	}
 	if req.Bedrooms != nil {
 		p.Bedrooms = req.Bedrooms
 	}

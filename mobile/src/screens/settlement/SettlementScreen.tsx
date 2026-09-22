@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { RootStackScreenProps } from '../../navigation/types';
 import { get, post, extractError, ApiClientError } from '../../api/client';
 import { Settlement } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { useAuth } from '../../auth/AuthContext';
-import { Badge, Button, Card, Divider, EmptyState, ErrorView, Input, LoadingView, Row, Screen } from '../../components/ui';
-import { formatDate, formatMoney, humanize, statusColor } from '../../utils/format';
+import { Button, EmptyState, ErrorView, Input, LoadingView, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
+import { formatDate, formatMoney, humanize } from '../../utils/format';
 import { theme } from '../../theme';
 
 export default function SettlementScreen({
@@ -32,7 +33,7 @@ export default function SettlementScreen({
       }
       throw err;
     }
-  }, [tenancyId]);
+  }, [tenancyId], { refreshOnFocus: true });
 
   if (settlement.loading) return <LoadingView label="Loading settlement…" />;
   if (settlement.error && !notFound) {
@@ -45,8 +46,7 @@ export default function SettlementScreen({
     setBusy('generate');
     try {
       await post<Settlement>(`/settlements/tenancy/${tenancyId}`, {
-        recorded_deposit_minor:
-          deposit ? Math.round(parseFloat(deposit) * 100) : undefined,
+        recorded_deposit_minor: deposit ? Math.round(parseFloat(deposit) * 100) : undefined,
         currency: 'INR',
       });
       setGenMode(false);
@@ -96,6 +96,7 @@ export default function SettlementScreen({
     return (
       <Screen scroll>
         <EmptyState
+          icon="receipt-outline"
           title="No settlement yet"
           subtitle={
             isLandlord
@@ -104,21 +105,22 @@ export default function SettlementScreen({
           }
         />
         {isLandlord && !genMode && (
-          <Button label="Generate settlement" onPress={() => setGenMode(true)} />
+          <Button label="Generate settlement" icon="add-circle-outline" onPress={() => setGenMode(true)} />
         )}
         {isLandlord && genMode && (
-          <Card>
+          <View style={styles.card}>
             <Input
               label="Recorded deposit (₹, optional)"
               value={deposit}
               onChangeText={setDeposit}
               keyboardType="decimal-pad"
               placeholder="100000"
+              icon="shield-checkmark-outline"
             />
             <Text style={styles.hint}>Leave blank to use the tenancy's recorded deposit.</Text>
             <Button label="Generate" onPress={() => void generate()} loading={busy === 'generate'} />
             <Button label="Cancel" variant="ghost" small onPress={() => setGenMode(false)} style={styles.gap} />
-          </Card>
+          </View>
         )}
       </Screen>
     );
@@ -127,46 +129,86 @@ export default function SettlementScreen({
   const mineConfirmed = isLandlord ? !!set.landlord_confirmed_at : !!set.tenant_confirmed_at;
   const canConfirm = set.status !== 'CONFIRMED' && !mineConfirmed;
   const remaining = set.remaining_amount_minor;
+  const owed = remaining < 0;
 
   return (
     <Screen scroll>
-      <Card>
-        <View style={styles.headRow}>
-          <Text style={styles.title}>Settlement statement</Text>
-          <Badge label={humanize(set.status)} color={statusColor(set.status)} />
-        </View>
-        <Text style={styles.sub}>Version {set.version_number} · generated {formatDate(set.created_at)}</Text>
-        <Divider />
-        <Row label="Recorded deposit" value={formatMoney(set.recorded_deposit_minor, set.currency)} />
-        <Row label="Total deductions" value={formatMoney(set.total_deduction_minor, set.currency)} />
-        <Divider />
-        <Row
-          label="Remaining refund / due"
-          value={`${formatMoney(Math.abs(remaining), set.currency)} ${remaining < 0 ? '(owed)' : ''}`}
-          subtle
-        />
-      </Card>
+      <ScreenTitle title="Settlement" />
+      <Text style={styles.subtitle}>
+        Statement for this tenancy · Version {set.version_number} · {formatDate(set.created_at)}
+      </Text>
 
-      {(set.items?.length ?? 0) > 0 && (
-        <Card>
-          <Text style={styles.subHead}>Itemized deductions</Text>
-          {set.items!.map((it) => (
-            <Row key={it.id} label={it.title} value={`− ${formatMoney(it.amount_minor, set.currency)}`} />
-          ))}
-        </Card>
+      <View style={styles.statementCard}>
+        <View style={styles.statusRow}>
+          <StatusBadge label={humanize(set.status)} />
+        </View>
+
+        <View style={styles.depositRow}>
+          <View style={styles.depositIcon}>
+            <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.success} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionLabel}>Security Deposit Recorded</Text>
+            <Text style={styles.bigValue}>{formatMoney(set.recorded_deposit_minor, set.currency)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.statementBody}>
+          <Text style={styles.sectionLabel}>Agreed Deductions</Text>
+          {(set.items?.length ?? 0) > 0 ? (
+            <>
+              {set.items!.map((it) => (
+                <View key={it.id} style={styles.itemRow}>
+                  <Text style={styles.itemLabel}>{it.title}</Text>
+                  <Text style={styles.itemValue}>− {formatMoney(it.amount_minor, set.currency)}</Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            <Text style={styles.hint}>No agreed deductions.</Text>
+          )}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total Deductions</Text>
+            <Text style={styles.totalValue}>− {formatMoney(set.total_deduction_minor, set.currency)}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.remainingCard}>
+        <Text style={styles.remainingLabel}>
+          {owed ? 'Amount owed' : 'Remaining Deposit'}
+        </Text>
+        <Text style={styles.remainingValue}>
+          {formatMoney(Math.abs(remaining), set.currency)}
+        </Text>
+        <Text style={styles.remainingNote}>
+          {owed
+            ? 'The tenant owes this amount towards agreed deductions.'
+            : `Parties agreed that ${formatMoney(Math.abs(remaining), set.currency)} is payable to the tenant.`}
+        </Text>
+      </View>
+
+      {canConfirm && (
+        <Button
+          label="Confirm Settlement"
+          icon="checkmark-circle-outline"
+          loading={busy === 'confirm'}
+          onPress={() => void confirm()}
+        />
       )}
 
       {isLandlord && set.status !== 'CONFIRMED' && (
-        <Card>
-          <Text style={styles.subHead}>Regenerate settlement</Text>
-          <Text style={styles.sub}>
-            If anything changed — a new agreed deduction or a revised deposit — regenerate to rebuild the statement with
-            a new version. Confirmations are reset and the tenant reviews again.
+        <View style={[styles.card, styles.gapTop]}>
+          <Text style={styles.sectionLabel}>Regenerate settlement</Text>
+          <Text style={styles.hint}>
+            If anything changed — a new agreed deduction or a revised deposit — regenerate to rebuild the
+            statement with a new version. Confirmations are reset and the tenant reviews again.
           </Text>
           {!regenMode ? (
             <Button
               label="Regenerate"
               variant="secondary"
+              icon="refresh-outline"
               loading={busy === 'regenerate'}
               onPress={() => setRegenMode(true)}
               style={styles.gap}
@@ -198,41 +240,97 @@ export default function SettlementScreen({
               />
             </>
           )}
-        </Card>
-      )}
-
-      {canConfirm && (
-        <Button
-          label="Confirm settlement"
-          variant="primary"
-          loading={busy === 'confirm'}
-          onPress={() => void confirm()}
-        />
+        </View>
       )}
 
       {(set.events?.length ?? 0) > 0 && (
-        <Card>
-          <Text style={styles.subHead}>Events</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>Events</Text>
           {set.events!.map((e) => (
-            <View key={e.id}>
+            <View key={e.id} style={styles.eventRow}>
               <Text style={styles.eventAction}>{humanize(e.action)}</Text>
-              <Text style={styles.sub}>
+              <Text style={styles.subtitleSmall}>
                 {e.notes ?? ''} · {formatDate(e.created_at)}
               </Text>
             </View>
           ))}
-        </Card>
+        </View>
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: theme.text.heading, fontWeight: '700', color: theme.colors.text },
-  sub: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: theme.spacing.xs },
-  subHead: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text, marginBottom: theme.spacing.sm },
-  hint: { color: theme.colors.textSubtle, fontSize: theme.text.small, marginBottom: theme.spacing.sm },
+  subtitle: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: 4, marginBottom: theme.spacing.md },
+  subtitleSmall: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: 2 },
+  statementCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  statusRow: { flexDirection: 'row', marginBottom: theme.spacing.md },
+  depositRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, marginBottom: theme.spacing.lg },
+  depositIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: theme.colors.successBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionLabel: { fontSize: theme.text.caption, color: theme.colors.textSubtle, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  bigValue: { fontSize: 24, fontWeight: '800', color: theme.colors.text, marginTop: 4 },
+  statementBody: {},
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: theme.spacing.sm },
+  itemLabel: { color: theme.colors.text, fontSize: theme.text.body },
+  itemValue: { color: theme.colors.text, fontSize: theme.text.body, fontWeight: '600' },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  totalLabel: { color: theme.colors.textSubtle, fontSize: theme.text.body, fontWeight: '600' },
+  totalValue: { color: theme.colors.textSubtle, fontSize: theme.text.body, fontWeight: '700' },
+  remainingCard: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.xl,
+    marginBottom: theme.spacing.md,
+    alignItems: 'center',
+  },
+  remainingLabel: {
+    color: theme.colors.primaryLight,
+    fontSize: theme.text.caption,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  remainingValue: { color: theme.colors.white, fontSize: 32, fontWeight: '800', marginTop: 8 },
+  remainingNote: {
+    color: theme.colors.primaryLight,
+    fontSize: theme.text.caption,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  hint: { color: theme.colors.textSubtle, fontSize: theme.text.small, marginBottom: theme.spacing.sm, marginTop: 2 },
   gap: { marginTop: theme.spacing.sm },
-  eventAction: { fontSize: theme.text.body, fontWeight: '600', color: theme.colors.text, marginTop: theme.spacing.sm },
+  gapTop: { marginTop: theme.spacing.sm },
+  eventRow: { paddingVertical: theme.spacing.xs, marginTop: theme.spacing.sm },
+  eventAction: { fontSize: theme.text.body, fontWeight: '600', color: theme.colors.text },
 });

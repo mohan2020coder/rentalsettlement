@@ -49,6 +49,7 @@ type Property struct {
 	MonthlyRentMinor     int64     `gorm:"column:monthly_rent_minor" json:"monthly_rent_minor"`
 	SecurityDepositMinor int64     `gorm:"column:security_deposit_minor" json:"security_deposit_minor"`
 	Currency             string    `json:"currency"`
+	Photo                *string   `gorm:"column:photo" json:"photo"`
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }

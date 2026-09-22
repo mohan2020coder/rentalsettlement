@@ -22,6 +22,7 @@ import (
 	"rental-settlement/backend/internal/properties"
 	"rental-settlement/backend/internal/settlements"
 	"rental-settlement/backend/internal/tenancies"
+	"rental-settlement/backend/internal/uploads"
 	"rental-settlement/backend/internal/users"
 	"rental-settlement/backend/pkg/middleware"
 	"rental-settlement/backend/pkg/storage"
@@ -156,6 +157,7 @@ func (a *App) registerRoutes() {
 	audit.RegisterRoutes(protected, a.Deps.DB, tenancies.GuardParty(a.Components.Tenancies))
 	notifications.RegisterRoutes(protected, a.Deps.DB)
 	evidence.RegisterRoutes(protected, a.Deps.DB, a.Components.Tenancies, a.Components.Audit)
+	uploads.RegisterRoutes(api, protected, a.Deps.Storage, a.Components.Billing, a.Components.Entitlements, a.Components.Audit)
 }
 
 func (a *App) health(c *gin.Context) {

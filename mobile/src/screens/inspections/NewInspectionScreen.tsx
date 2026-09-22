@@ -40,7 +40,7 @@ export default function NewInspectionScreen({
   return (
     <Screen keyboard scroll>
       <Text style={styles.pageTitle}>
-        {kind === 'MOVE_IN' ? 'New move-in inspection' : 'New move-out inspection'}
+        {kind === 'MOVE_IN' ? 'Start Move-In Inspection' : 'Start Move-Out Inspection'}
       </Text>
       <Text style={styles.hint}>
         A {kind === 'MOVE_IN' ? 'move-in' : 'move-out'} report is created with a standard room and
@@ -55,17 +55,20 @@ export default function NewInspectionScreen({
         numberOfLines={4}
         placeholder="Optional notes for this inspection"
         style={styles.multiline}
+        icon="create-outline"
       />
       <Input
         label="Extra rooms (comma separated, optional)"
         value={rooms}
         onChangeText={setRooms}
         placeholder="Store room, Terrace"
+        icon="add-circle-outline"
       />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Button
         label={kind === 'MOVE_IN' ? 'Start move-in inspection' : 'Start move-out inspection'}
+        icon={kind === 'MOVE_IN' ? 'log-in-outline' : 'log-out-outline'}
         onPress={() => void submit()}
         loading={submitting}
       />
@@ -74,7 +77,7 @@ export default function NewInspectionScreen({
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text },
+  pageTitle: { fontSize: theme.text.screenTitle, fontWeight: '800', color: theme.colors.text },
   hint: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg },
   multiline: { height: 90, textAlignVertical: 'top' },
   error: { color: theme.colors.danger, fontSize: theme.text.caption, marginBottom: theme.spacing.md },

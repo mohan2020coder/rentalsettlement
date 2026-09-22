@@ -191,3 +191,23 @@ export async function rawAuth<T>(url: string, body: unknown): Promise<T> {
     throw extractError(err);
   }
 }
+
+export async function upload<T>(url: string, form: FormData): Promise<T> {
+  try {
+    const access = providers?.getAccessToken() ?? null;
+    const resp = await axios.post<Envelope<T>>(`${API_BASE_URL}${url}`, form, {
+      headers: access ? { Authorization: `Bearer ${access}` } : {},
+      timeout: 60000,
+      transformRequest: [(data) => data],
+    });
+    return resp.data.data;
+  } catch (err) {
+    throw extractError(err);
+  }
+}
+
+export function mediaUrl(key: string | null | undefined): string | null {
+  if (!key) return null;
+  const clean = key.replace(/^\/+/, '');
+  return `${API_BASE_URL}/storage/${clean}`;
+}

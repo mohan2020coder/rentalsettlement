@@ -5,13 +5,27 @@ import { get, post, extractError } from '../../api/client';
 import { DeductionClaim, Dispute, DisputeEvent } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { useAuth } from '../../auth/AuthContext';
-import { Badge, Button, Card, Divider, ErrorView, Input, LoadingView, Row, Screen } from '../../components/ui';
-import { formatDateTime, formatMoney, humanize, timeAgo, statusColor } from '../../utils/format';
+import { Button, ErrorView, Input, LoadingView, Screen, ScreenTitle, StatusBadge, TimelineItem } from '../../components/ui';
+import { formatDateTime, formatMoney, humanize, timeAgo } from '../../utils/format';
 import { theme } from '../../theme';
 
 interface DisputePayload {
   dispute: Dispute;
   events: DisputeEvent[];
+}
+
+function eventIcon(e: DisputeEvent): { icon: 'arrow-up-circle-outline' | 'hand-left-outline' | 'checkmark-done-outline' | 'refresh-outline'; color: string } {
+  const a = e.action.toLowerCase();
+  if (a.includes('accepted') || a.includes('agreed')) {
+    return { icon: 'checkmark-done-outline', color: theme.colors.success };
+  }
+  if (a.includes('disputed') || a.includes('counter')) {
+    return { icon: 'refresh-outline', color: theme.colors.warning };
+  }
+  if (a.includes('withdraw')) {
+    return { icon: 'arrow-up-circle-outline', color: theme.colors.textSubtle };
+  }
+  return { icon: 'hand-left-outline', color: theme.colors.primary };
 }
 
 export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>) {
@@ -22,7 +36,7 @@ export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
 
-  const dispute = useLoad(async () => get<DisputePayload>(`/disputes/${disputeId}`), [disputeId]);
+  const dispute = useLoad(async () => get<DisputePayload>(`/disputes/${disputeId}`), [disputeId], { refreshOnFocus: true });
 
   if (dispute.loading) return <LoadingView label="Loading negotiation…" />;
   if (dispute.error || !dispute.data) {
@@ -77,22 +91,23 @@ export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>
 
   return (
     <Screen scroll keyboard>
-      <Card>
-        <View style={styles.headRow}>
-          <Text style={styles.title}>
-            {d.category?.replace(/_/g, ' ') || 'Deduction negotiation'}
-          </Text>
-          <Badge label={humanize(d.status)} color={statusColor(d.status)} />
+      <ScreenTitle title="Dispute" />
+      <View style={styles.headerCard}>
+        <View style={styles.headerTop}>
+          <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+            <Text style={styles.title}>{d.category?.replace(/_/g, ' ') || 'Deduction negotiation'}</Text>
+            <Text style={styles.sub}>Opened {formatDateTime(d.created_at)}</Text>
+          </View>
+          <StatusBadge label={humanize(d.status)} />
         </View>
         {d.description ? <Text style={styles.desc}>{d.description}</Text> : null}
-        <Text style={styles.sub}>Opened {formatDateTime(d.created_at)}</Text>
-      </Card>
+      </View>
 
       {active && (
         <>
           {!isLandlord && (
-            <Card>
-              <Button label="Accept the current offer" onPress={acceptOffer} loading={busy === 'accept'} />
+            <View style={styles.card}>
+              <Button label="Accept the current offer" icon="checkmark-circle-outline" onPress={acceptOffer} loading={busy === 'accept'} />
               <Button
                 label="Withdraw negotiation"
                 variant="ghost"
@@ -100,12 +115,12 @@ export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>
                 style={styles.gap}
                 loading={busy === 'withdraw'}
               />
-            </Card>
+            </View>
           )}
           {isLandlord && (
-            <Card>
+            <View style={styles.card}>
               {!offerMode ? (
-                <Button label="Make a counter-offer" onPress={() => setOfferMode(true)} />
+                <Button label="Make a counter-offer" icon="refresh-outline" onPress={() => setOfferMode(true)} />
               ) : (
                 <>
                   <Input
@@ -114,6 +129,7 @@ export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>
                     onChangeText={setAmount}
                     keyboardType="decimal-pad"
                     placeholder="4000"
+                    icon="cash-outline"
                   />
                   <Input
                     label="Reason (optional)"
@@ -123,40 +139,40 @@ export default function DisputeScreen({ route }: RootStackScreenProps<'Dispute'>
                     numberOfLines={3}
                     style={styles.multiline}
                   />
-                  <Button label="Send counter-offer" onPress={submitOffer} loading={busy === 'offer'} />
+                  <Button label="Send counter-offer" icon="send-outline" onPress={submitOffer} loading={busy === 'offer'} />
                   <Button label="Cancel" variant="ghost" small onPress={() => setOfferMode(false)} style={styles.gap} />
                 </>
               )}
-            </Card>
-          )}
-          {isLandlord && isOpenedByMe && (
-            <View style={styles.gap}>
-              <Button label="Close this negotiation" variant="ghost" onPress={withdraw} loading={busy === 'withdraw'} />
             </View>
           )}
         </>
       )}
 
-      <Text style={styles.section}>Negotiation trail</Text>
-      <Card>
+      <Text style={styles.section}>Negotiation timeline</Text>
+      <View style={styles.timelineCard}>
         {events.length === 0 ? (
           <Text style={styles.sub}>No events yet.</Text>
         ) : (
-          events.map((e, i) => (
-            <View key={e.id}>
-              {i > 0 ? <Divider /> : null}
-              <Text style={styles.eventAction}>{humanize(e.action)}</Text>
-              <Text style={styles.eventMeta}>
-                {e.original_amount_minor != null || e.new_amount_minor != null
-                  ? sequence(e) + ' · '
-                  : ''}
-                {timeAgo(e.created_at)}
-              </Text>
-              {e.reason ? <Text style={styles.eventReason}>“{e.reason}”</Text> : null}
-            </View>
-          ))
+          events.map((e, i) => {
+            const meta = eventIcon(e);
+            const seq = sequence(e);
+            const isLast = i === events.length - 1;
+            const parts: string[] = [timeAgo(e.created_at)];
+            if (e.reason) parts.push(`“${e.reason}”`);
+            return (
+              <TimelineItem
+                key={e.id}
+                icon={meta.icon}
+                color={meta.color}
+                title={humanize(e.action)}
+                meta={parts.join(' · ')}
+                amount={seq || undefined}
+                isLast={isLast}
+              />
+            );
+          })
         )}
-      </Card>
+      </View>
     </Screen>
   );
 }
@@ -169,14 +185,42 @@ function sequence(e: DisputeEvent): string {
 }
 
 const styles = StyleSheet.create({
-  headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  title: { fontSize: theme.text.heading, fontWeight: '700', color: theme.colors.text, flex: 1, paddingRight: theme.spacing.md },
-  sub: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: theme.spacing.xs },
-  desc: { color: theme.colors.text, fontSize: theme.text.body, marginTop: theme.spacing.sm },
+  headerCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  title: { fontSize: theme.text.heading, fontWeight: '700', color: theme.colors.text },
+  sub: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: 2 },
+  desc: { color: theme.colors.text, fontSize: theme.text.body, marginTop: theme.spacing.md },
+  card: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
   gap: { marginTop: theme.spacing.sm },
   multiline: { height: 70, textAlignVertical: 'top' },
-  section: { fontSize: theme.text.heading, fontWeight: '700', color: theme.colors.text, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
-  eventAction: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
-  eventMeta: { color: theme.colors.textSubtle, fontSize: theme.text.small, marginTop: 2 },
-  eventReason: { color: theme.colors.text, fontSize: theme.text.caption, marginTop: 2, fontStyle: 'italic' },
+  section: {
+    fontSize: theme.text.heading,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  timelineCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+  },
 });

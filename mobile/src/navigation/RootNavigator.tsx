@@ -30,9 +30,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const headerOptions = {
   headerTintColor: theme.colors.primaryDark,
-  headerTitleStyle: { fontSize: 17, fontWeight: '700' as const },
+  headerTitleStyle: { fontSize: 18, fontWeight: '800' as const, color: theme.colors.text },
   headerStyle: { backgroundColor: theme.colors.surface },
   headerShadowVisible: false,
+  headerTitleAlign: 'center' as const,
 };
 
 export default function RootNavigator() {

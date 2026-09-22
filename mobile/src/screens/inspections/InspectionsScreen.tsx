@@ -5,8 +5,8 @@ import { get } from '../../api/client';
 import { InspectionSummary } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { useAuth } from '../../auth/AuthContext';
-import { Badge, Button, Card, EmptyState, ErrorView, ListItem, LoadingView, Screen, SectionHeader } from '../../components/ui';
-import { formatDate, humanize, statusColor } from '../../utils/format';
+import { Button, EmptyState, ErrorView, ListItem, LoadingView, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
+import { formatDate, humanize } from '../../utils/format';
 import { theme } from '../../theme';
 
 export default function InspectionsScreen({
@@ -20,6 +20,7 @@ export default function InspectionsScreen({
   const list = useLoad(
     async () => get<InspectionSummary[]>(`/inspections/tenancy/${tenancyId}`),
     [tenancyId],
+    { refreshOnFocus: true },
   );
 
   if (list.loading) return <LoadingView label="Loading inspections…" />;
@@ -29,38 +30,47 @@ export default function InspectionsScreen({
 
   return (
     <Screen scroll refreshing={list.loading} onRefresh={list.reload}>
-      <SectionHeader
-        title="Inspections"
-        action={
-          <View style={styles.actions}>
+      <View style={styles.head}>
+        <View style={styles.headCopy}>
+          <ScreenTitle title="Inspections" />
+          <Text style={styles.subtitle}>Condition reports for this tenancy.</Text>
+        </View>
+        <View style={styles.actions}>
+          <Button
+            label="Move-out"
+            small
+            onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_OUT' })}
+            icon="log-out-outline"
+          />
+          {isLandlord && (
             <Button
-              label="Move-out"
+              label="Move-in"
               small
-              onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_OUT' })}
+              variant="secondary"
+              onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_IN' })}
+              icon="log-in-outline"
             />
-            {isLandlord && (
-              <Button
-                label="Move-in"
-                small
-                onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_IN' })}
-              />
-            )}
-          </View>
-        }
-      />
+          )}
+        </View>
+      </View>
 
       {items.length === 0 ? (
-        <EmptyState
-          title="No inspections yet"
-          subtitle="Create a move-in inspection when a tenancy starts and a move-out inspection when it ends."
-        />
+        <View style={styles.emptyCard}>
+          <EmptyState
+            icon="camera-outline"
+            title="No inspections yet"
+            subtitle="Create a move-in inspection when a tenancy starts and a move-out inspection when it ends."
+          />
+        </View>
       ) : (
         items.map((i) => (
           <ListItem
             key={i.id}
+            icon={i.kind === 'MOVE_IN' ? 'log-in-outline' : 'log-out-outline'}
+            iconColor={i.kind === 'MOVE_IN' ? theme.colors.success : theme.colors.warning}
             title={i.kind === 'MOVE_IN' ? 'Move-in inspection' : 'Move-out inspection'}
-            subtitle={`${humanize(i.status)} · ${formatDate(i.created_at)}`}
-            right={<Badge label={humanize(i.status)} color={statusColor(i.status)} />}
+            subtitle={`${formatDate(i.created_at)}${i.conducted_by ? ' · jointly conducted' : ''}`}
+            right={<StatusBadge label={humanize(i.status)} />}
             onPress={() => navigation.navigate('InspectionDetail', { inspectionId: i.id })}
           />
         ))
@@ -70,5 +80,15 @@ export default function InspectionsScreen({
 }
 
 const styles = StyleSheet.create({
-  actions: { flexDirection: 'row', gap: theme.spacing.sm },
+  head: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  headCopy: { flex: 1, minWidth: 0 },
+  subtitle: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: theme.spacing.sm, flexShrink: 0 },
+  emptyCard: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg },
 });

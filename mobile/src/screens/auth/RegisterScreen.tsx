@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Button, Input, Screen } from '../../components/ui';
+import { Ionicons } from '@expo/vector-icons';
+import { Button, Input, RoleCard, Screen } from '../../components/ui';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiClientError } from '../../api/client';
 import { RootStackParamList } from '../../navigation/types';
@@ -17,6 +18,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<Role>('TENANT');
   const [error, setError] = useState<string | null>(null);
 
@@ -38,26 +40,39 @@ export default function RegisterScreen() {
     }
   };
 
-  const roleBtn = (r: Role, label: string) => (
-    <Button
-      label={label}
-      variant={role === r ? 'primary' : 'secondary'}
-      small
-      onPress={() => setRole(r)}
-    />
-  );
-
   return (
     <Screen keyboard scroll>
-      <Text style={styles.title}>Create an account</Text>
-      <Text style={styles.subtitle}>Pick the role that matches how you use the platform.</Text>
-
-      <View style={styles.roleRow}>
-        {roleBtn('LANDLORD', 'Landlord')}
-        {roleBtn('TENANT', 'Tenant')}
+      <View style={styles.head}>
+        <View style={styles.logoMark}>
+          <Ionicons name="shield-checkmark" size={22} color={theme.colors.white} />
+        </View>
+        <Text style={styles.title}>Create Account</Text>
+        <Text style={styles.subtitle}>Join RentSafe to manage your rental journey</Text>
       </View>
 
-      <Input label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
+      <Text style={styles.label}>I am a…</Text>
+      <RoleCard
+        title="Landlord"
+        subtitle="Manage your properties and tenancies"
+        icon="business-outline"
+        selected={role === 'LANDLORD'}
+        onPress={() => setRole('LANDLORD')}
+      />
+      <RoleCard
+        title="Tenant"
+        subtitle="Find your rental and manage your stay"
+        icon="home-outline"
+        selected={role === 'TENANT'}
+        onPress={() => setRole('TENANT')}
+      />
+
+      <Input
+        label="Full Name"
+        value={name}
+        onChangeText={setName}
+        placeholder="Your name"
+        icon="person-outline"
+      />
       <Input
         label="Email"
         value={email}
@@ -65,6 +80,7 @@ export default function RegisterScreen() {
         autoCapitalize="none"
         keyboardType="email-address"
         placeholder="you@example.com"
+        icon="mail-outline"
       />
       <Input
         label="Phone (optional)"
@@ -72,22 +88,33 @@ export default function RegisterScreen() {
         onChangeText={setPhone}
         keyboardType="phone-pad"
         placeholder="+91 "
+        icon="call-outline"
       />
       <Input
         label="Password"
         value={password}
         onChangeText={setPassword}
-        secureTextEntry
+        secureTextEntry={!showPassword}
         placeholder="At least 8 characters"
+        icon="lock-closed-outline"
+        accessory={
+          <Pressable onPress={() => setShowPassword((s) => !s)} hitSlop={8}>
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={theme.colors.textSubtle}
+            />
+          </Pressable>
+        }
       />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Button label="Register" onPress={() => void submit()} loading={signingIn} />
+      <Button label="Register" onPress={() => void submit()} loading={signingIn} icon="person-add-outline" />
 
       <Pressable style={styles.footer} onPress={() => navigation.goBack()}>
         <Text style={styles.footerText}>
-          Already have an account? <Text style={styles.footerLink}>Sign in</Text>
+          Already have an account? <Text style={styles.footerLink}>Login</Text>
         </Text>
       </Pressable>
     </Screen>
@@ -95,15 +122,38 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text },
+  head: { alignItems: 'center', marginTop: 8, marginBottom: theme.spacing.xl },
+  logoMark: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  title: { fontSize: 24, fontWeight: '800', color: theme.colors.text },
   subtitle: {
     color: theme.colors.textSubtle,
     fontSize: theme.text.body,
-    marginTop: theme.spacing.xs,
-    marginBottom: theme.spacing.xl,
+    marginTop: 4,
+    textAlign: 'center',
   },
-  roleRow: { flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.lg },
-  error: { color: theme.colors.danger, fontSize: theme.text.caption, marginBottom: theme.spacing.md },
+  label: {
+    fontSize: theme.text.caption,
+    color: theme.colors.textSubtle,
+    fontWeight: '600',
+    marginBottom: theme.spacing.sm,
+  },
+  error: {
+    color: theme.colors.danger,
+    fontSize: theme.text.caption,
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.dangerBg,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    fontWeight: '500',
+  },
   footer: { marginTop: theme.spacing.xl, alignItems: 'center' },
   footerText: { color: theme.colors.textSubtle, fontSize: theme.text.body },
   footerLink: { color: theme.colors.primary, fontWeight: '700' },

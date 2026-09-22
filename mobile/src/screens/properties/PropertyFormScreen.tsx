@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Image, StyleSheet, Switch, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { RootStackScreenProps } from '../../navigation/types';
-import { get, post, patch, extractError, ApiClientError } from '../../api/client';
-import { Property } from '../../api/types';
+import { get, post, patch, upload, mediaUrl, extractError, ApiClientError } from '../../api/client';
+import { Property, UploadRef } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { Button, Card, ErrorView, Input, LoadingView, Screen } from '../../components/ui';
 import { theme } from '../../theme';
@@ -31,6 +32,8 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
   const [listed, setListed] = useState(false);
   const [rent, setRent] = useState('');
   const [deposit, setDeposit] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +54,7 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
       setListed(p.listed);
       setRent(minorToRupees(p.monthly_rent_minor));
       setDeposit(minorToRupees(p.security_deposit_minor));
+      setPhoto(p.photo ?? null);
     }
   }, [existing.data]);
 
@@ -65,6 +69,44 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
   const minorToRupees = (minor?: number): string => {
     const n = (minor ?? 0) / 100;
     return n % 1 === 0 ? String(n) : n.toFixed(2);
+  };
+
+  const pickAndUpload = async () => {
+    setError(null);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo library access to add a property picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      setPhotoUploading(true);
+      try {
+        const form = new FormData();
+        if (asset.uri.startsWith('data:')) {
+          const blob = await (await fetch(asset.uri)).blob();
+          form.append('file', blob, 'photo.jpg');
+        } else {
+          const mime = asset.mimeType ?? 'image/jpeg';
+          const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+          form.append('file', { uri: asset.uri, name: `photo.${ext}`, type: mime } as unknown as Blob);
+        }
+        const ref = await upload<UploadRef>('/storage/upload', form);
+        setPhoto(ref.file_path);
+      } finally {
+        setPhotoUploading(false);
+      }
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'Could not upload photo');
+    }
   };
 
   const submit = async () => {
@@ -89,6 +131,7 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
       bathrooms: bathrooms ? parseInt(bathrooms, 10) : undefined,
       furnishing_status: furnishing,
       description: description || undefined,
+      photo: photo || null,
       listed,
       monthly_rent_minor: toMinor(rent),
       security_deposit_minor: toMinor(deposit),
@@ -116,7 +159,7 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
         <Button
           key={o}
           label={o.replace(/_/g, ' ')}
-          variant={value === o ? 'primary' : 'secondary'}
+          variant={value === o ? 'primary' : 'ghost'}
           small
           onPress={() => onChange(o)}
         />
@@ -177,6 +220,21 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
 
       <Input label="Property name" value={name} onChangeText={setName} placeholder="E.g. Lakeview Apartment, 2BHK" />
 
+      <Card style={styles.photoCard}>
+        <Text style={styles.label}>Photo</Text>
+        {photo ? (
+          <View>
+            <Image source={{ uri: mediaUrl(photo) ?? undefined }} style={styles.photoPreview} resizeMode="cover" />
+            <View style={styles.photoActions}>
+              <Button label="Replace photo" variant="ghost" small onPress={() => void pickAndUpload()} loading={photoUploading} disabled={photoUploading} />
+              <Button label="Remove" variant="danger" small onPress={() => setPhoto(null)} />
+            </View>
+          </View>
+        ) : (
+          <Button label="Add a photo" variant="primary" onPress={() => void pickAndUpload()} loading={photoUploading} disabled={photoUploading} />
+        )}
+      </Card>
+
       {listSwitch}
 
       <Text style={styles.label}>Furnishing</Text>
@@ -224,7 +282,7 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text, marginBottom: theme.spacing.md },
+  pageTitle: { fontSize: theme.text.screenTitle, fontWeight: '800', color: theme.colors.text, marginBottom: theme.spacing.md },
   label: {
     fontSize: theme.text.caption,
     color: theme.colors.textSubtle,
@@ -244,4 +302,7 @@ const styles = StyleSheet.create({
   listSub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
   listFields: { marginTop: theme.spacing.md },
   listHint: { fontSize: theme.text.small, color: theme.colors.textSubtle, marginTop: -4, marginBottom: theme.spacing.md },
+  photoCard: { marginBottom: theme.spacing.md },
+  photoPreview: { width: '100%', height: 150, borderRadius: theme.radius.md, backgroundColor: theme.colors.primaryLight },
+  photoActions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
 });

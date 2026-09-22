@@ -51,7 +51,7 @@ export default function NewMaintenanceScreen({
         <Button
           key={o}
           label={o === 'OTHER' ? o : o.charAt(0).toUpperCase() + o.slice(1).toLowerCase()}
-          variant={value === o ? 'primary' : 'secondary'}
+          variant={value === o ? 'primary' : 'ghost'}
           small
           onPress={() => set(o)}
         />
@@ -61,7 +61,10 @@ export default function NewMaintenanceScreen({
 
   return (
     <Screen keyboard scroll>
-      <Text style={styles.pageTitle}>Report an issue</Text>
+      <Text style={styles.pageTitle}>Report an Issue</Text>
+      <Text style={styles.hint}>
+        Describe the problem so both parties have a clear, dated record.
+      </Text>
       <Input
         label="Title"
         value={title}
@@ -76,6 +79,7 @@ export default function NewMaintenanceScreen({
         numberOfLines={4}
         style={styles.multiline}
         placeholder="What's happening, since when, any impact…"
+        icon="create-outline"
       />
 
       <Text style={styles.label}>Category</Text>
@@ -85,13 +89,14 @@ export default function NewMaintenanceScreen({
       {segmented(PRIORITIES, priority, setPriority)}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Button label="Report issue" onPress={() => void submit()} loading={submitting} />
+      <Button label="Submit Request" icon="paper-plane-outline" onPress={() => void submit()} loading={submitting} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: theme.text.title, fontWeight: '800', color: theme.colors.text },
+  pageTitle: { fontSize: theme.text.screenTitle, fontWeight: '800', color: theme.colors.text },
+  hint: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg },
   label: {
     fontSize: theme.text.caption,
     color: theme.colors.textSubtle,

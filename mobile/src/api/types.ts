@@ -46,7 +46,14 @@ export interface Property {
   monthly_rent_minor: number;
   security_deposit_minor: number;
   currency: string;
+  photo?: string | null;
   created_at: string;
+}
+
+export interface UploadRef {
+  file_path: string;
+  mime_type: string;
+  size: number;
 }
 
 export interface Listing {
@@ -64,6 +71,7 @@ export interface Listing {
   monthly_rent_minor: number;
   security_deposit_minor: number;
   currency: string;
+  photo?: string | null;
   created_at: string;
 }
 

@@ -1,86 +1,187 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { get } from '../../api/client';
-import { Property } from '../../api/types';
+import { Ionicons } from '@expo/vector-icons';
+import { get, mediaUrl } from '../../api/client';
+import { Property, Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { Badge, Button, Card, EmptyState, ErrorView, LoadingView, Screen, SectionHeader } from '../../components/ui';
+import { Button, EmptyState, ErrorView, LoadingView, PropertyImage, Screen, SearchBar, ScreenTitle, StatusBadge } from '../../components/ui';
 import { RootStackParamList } from '../../navigation/types';
-import { formatDate, formatMoney, statusColor } from '../../utils/format';
+import { formatDate } from '../../utils/format';
 import { theme } from '../../theme';
 
 export default function PropertiesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const props = useLoad(async () => get<Property[]>('/properties'), []);
+  const [query, setQuery] = useState('');
+
+  const props = useLoad(async () => get<Property[]>('/properties'), [], { refreshOnFocus: true });
+  const tenancies = useLoad(async () => get<Tenancy[]>('/tenancies'), [], { refreshOnFocus: true });
+
+  const tenancyMap = useMemo(() => {
+    const map: Record<string, { active: number; invited: number }> = {};
+    for (const t of tenancies.data ?? []) {
+      const key = t.property_id;
+      const entry = map[key] ?? { active: 0, invited: 0 };
+      if (t.status === 'ACTIVE' || t.status === 'NOTICE_GIVEN' || t.status === 'MOVE_OUT') entry.active += 1;
+      if (t.status === 'INVITED') entry.invited += 1;
+      map[key] = entry;
+    }
+    return map;
+  }, [tenancies.data]);
 
   if (props.loading) return <LoadingView label="Loading properties…" />;
   if (props.error) return <ErrorView message={props.error} onRetry={props.reload} />;
 
-  const list = props.data ?? [];
+  let list = props.data ?? [];
+  const q = query.trim().toLowerCase();
+  if (q) {
+    list = list.filter(
+      (p) =>
+        p.property_name.toLowerCase().includes(q) ||
+        (p.locality ?? '').toLowerCase().includes(q) ||
+        (p.city ?? '').toLowerCase().includes(q) ||
+        (p.property_type ?? '').toLowerCase().includes(q),
+    );
+  }
 
   return (
-    <Screen scroll refreshing={props.loading} onRefresh={props.reload}>
-      <SectionHeader
-        title="Properties"
-        action={
-          <View style={styles.headerActions}>
-            <Button
-              label="Visit requests"
-              variant="secondary"
-              small
-              onPress={() => navigation.navigate('Applications')}
-            />
-            <Button label="+ Add" small onPress={() => navigation.navigate('PropertyForm', {})} />
-          </View>
-        }
-      />
+    <Screen scroll refreshing={props.loading} onRefresh={() => { props.reload(); tenancies.reload(); }}>
+      <ScreenTitle title="My Properties" />
+      <Text style={styles.subtitle}>Manage your rental portfolio and tenancies.</Text>
+
+      <View style={styles.actions}>
+        <View style={styles.searchWrap}>
+          <SearchBar value={query} onChangeText={setQuery} placeholder="Search properties..." />
+        </View>
+        <Button
+          label="Create Property"
+          onPress={() => navigation.navigate('PropertyForm', {})}
+          icon="add"
+          style={styles.createButton}
+        />
+      </View>
 
       {list.length === 0 ? (
-        <EmptyState
-          title="No properties yet"
-          subtitle="Add your first rental property to start inviting tenants."
-        />
+        <View style={styles.emptyCard}>
+          <EmptyState
+            icon="business-outline"
+            title={q ? 'No matching properties' : 'Your properties will appear here.'}
+            subtitle="Add a rental property to start inviting tenants."
+          />
+          {!q && (
+            <Button
+              label="Create Property"
+              onPress={() => navigation.navigate('PropertyForm', {})}
+            />
+          )}
+        </View>
       ) : (
-        list.map((p) => (
-          <Card
-            key={p.id}
-            onPress={() => navigation.navigate('PropertyForm', { propertyId: p.id })}
-          >
-            <View style={styles.row}>
-              <View style={styles.info}>
-                <Text style={styles.name}>{p.property_name}</Text>
-                <Text style={styles.sub}>
-                  {[p.locality, p.city, p.state].filter(Boolean).join(', ') || 'Address not set'}
-                </Text>
-                <Text style={styles.sub}>
-                  {p.property_type.replace(/_/g, ' ')}
-                  {p.bedrooms ? ` · ${p.bedrooms} BHK` : ''} · since {formatDate(p.created_at)}
-                </Text>
-                <Text style={styles.listState}>
-                  {p.monthly_rent_minor > 0 ? `${formatMoney(p.monthly_rent_minor, p.currency)}/mo · ` : ''}
-                  {p.listed ? 'Listed on marketplace' : 'Not listed'}
-                </Text>
+        list.map((p) => {
+          const t = tenancyMap[p.id];
+          const activeCount = t?.active ?? 0;
+          const invitedCount = t?.invited ?? 0;
+          return (
+            <Pressable
+              key={p.id}
+              style={({ pressed }) => [styles.propertyCard, pressed && { opacity: 0.92 }]}
+              onPress={() => navigation.navigate('PropertyForm', { propertyId: p.id })}
+            >
+              <PropertyImage uri={mediaUrl(p.photo)} name={p.property_name} height={120} />
+              <View style={styles.propertyBody}>
+                <View style={styles.propertyHead}>
+                  <View style={styles.titleWrap}>
+                    <Text style={styles.propertyName} numberOfLines={1}>
+                      {p.property_name}
+                    </Text>
+                    <Text style={styles.propertyLocation}>
+                      {[p.locality, p.city].filter(Boolean).join(', ') || 'Location not set'}
+                    </Text>
+                  </View>
+                  <View style={styles.badgeWrap}>
+                    <StatusBadge label={p.status.replace(/_/g, ' ')} />
+                  </View>
+                </View>
+                <View style={styles.chipRow}>
+                  <View style={styles.chip}>
+                    <Ionicons name="business-outline" size={12} color={theme.colors.primary} />
+                    <Text style={styles.chipText}>{(p.property_type || 'Property').replace(/_/g, ' ')}</Text>
+                  </View>
+                  {p.bedrooms ? (
+                    <View style={styles.chip}>
+                      <Ionicons name="bed-outline" size={12} color={theme.colors.primary} />
+                      <Text style={styles.chipText}>{p.bedrooms} BHK</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.propertyFooter}>
+                  <View style={styles.propertyMeta}>
+                    <Ionicons name="key-outline" size={14} color={activeCount > 0 ? theme.colors.success : theme.colors.textSubtle} />
+                    <Text style={[styles.propertyMetaText, activeCount > 0 && { color: theme.colors.success, fontWeight: '700' }]}>
+                      {activeCount} Active {activeCount === 1 ? 'Tenancy' : 'Tenancies'}
+                    </Text>
+                  </View>
+                  {invitedCount > 0 && (
+                    <View style={styles.propertyMeta}>
+                      <Ionicons name="mail-outline" size={14} color={theme.colors.warning} />
+                      <Text style={[styles.propertyMetaText, { color: theme.colors.warning, fontWeight: '700' }]}>
+                        {invitedCount} {invitedCount === 1 ? 'Invite' : 'Invites'}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.propertyMeta}>
+                    <Ionicons name="calendar-outline" size={14} color={theme.colors.textSubtle} />
+                    <Text style={styles.propertyMetaText}>{formatDate(p.created_at)}</Text>
+                  </View>
+                </View>
               </View>
-              <Badge label={p.status} color={statusColor(p.status)} />
-            </View>
-          </Card>
-        ))
+            </Pressable>
+          );
+        })
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: 'row', gap: theme.spacing.sm },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  info: { flex: 1, paddingRight: theme.spacing.md, gap: 2 },
-  name: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
-  sub: { fontSize: theme.text.caption, color: theme.colors.textSubtle },
-  listState: {
-    fontSize: theme.text.small,
-    fontWeight: '600',
-    color: theme.colors.primaryDark,
-    marginTop: 2,
+  subtitle: {
+    color: theme.colors.textSubtle,
+    fontSize: theme.text.caption,
+    marginTop: 4,
+    marginBottom: theme.spacing.lg,
   },
+  actions: { marginBottom: theme.spacing.md },
+  searchWrap: { marginBottom: theme.spacing.md },
+  createButton: {},
+  emptyCard: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg },
+  propertyCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    overflow: 'hidden',
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  propertyBody: { padding: theme.spacing.lg },
+  propertyHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.spacing.md },
+  titleWrap: { flex: 1 },
+  propertyName: { fontSize: theme.text.cardTitle, fontWeight: '700', color: theme.colors.text },
+  badgeWrap: { flexShrink: 0 },
+  chipRow: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: theme.colors.primarySoft,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+  },
+  chipText: { fontSize: theme.text.small, color: theme.colors.primary, fontWeight: '600' },
+  propertyLocation: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
+  propertyFooter: { flexDirection: 'row', alignItems: 'center', marginTop: theme.spacing.md, paddingTop: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  propertyMeta: { flexDirection: 'row', alignItems: 'center', marginRight: theme.spacing.md, gap: 5 },
+  propertyMetaText: { fontSize: theme.text.small, color: theme.colors.textSubtle },
 });

@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"rental-settlement/backend/pkg/storage"
 	"rental-settlement/backend/pkg/validator"
 )
 
@@ -22,6 +23,7 @@ type CreatePropertyRequest struct {
 	Bathrooms            *int   `json:"bathrooms"`
 	FurnishingStatus     string `json:"furnishing_status"`
 	Description          string `json:"description"`
+	Photo                string `json:"photo"`
 	Listed               bool   `json:"listed"`
 	MonthlyRentMinor     int64  `json:"monthly_rent_minor"`
 	SecurityDepositMinor int64  `json:"security_deposit_minor"`
@@ -42,6 +44,7 @@ type UpdatePropertyRequest struct {
 	Bathrooms            *int    `json:"bathrooms"`
 	FurnishingStatus     *string `json:"furnishing_status"`
 	Description          *string `json:"description"`
+	Photo                *string `json:"photo"`
 	Status               string  `json:"status"`
 	Listed               *bool   `json:"listed"`
 	MonthlyRentMinor     *int64  `json:"monthly_rent_minor"`
@@ -70,6 +73,7 @@ type PropertyDTO struct {
 	MonthlyRentMinor     int64     `json:"monthly_rent_minor"`
 	SecurityDepositMinor int64     `json:"security_deposit_minor"`
 	Currency             string    `json:"currency"`
+	Photo                *string   `json:"photo"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 
@@ -90,6 +94,7 @@ type ListingDTO struct {
 	MonthlyRentMinor     int64     `json:"monthly_rent_minor"`
 	SecurityDepositMinor int64     `json:"security_deposit_minor"`
 	Currency             string    `json:"currency"`
+	Photo                *string   `json:"photo"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 
@@ -118,6 +123,11 @@ func validateCreate(req CreatePropertyRequest) map[string]any {
 	if req.Listed && req.MonthlyRentMinor <= 0 {
 		details["listed"] = "a monthly rent is required to list the property on the marketplace"
 	}
+	if req.Photo != "" {
+		if err := storage.ValidateKey(req.Photo); err != nil {
+			details["photo"] = "photo must reference platform storage"
+		}
+	}
 	return details
 }
 
@@ -142,6 +152,7 @@ func toDTO(p *Property) *PropertyDTO {
 		MonthlyRentMinor:     p.MonthlyRentMinor,
 		SecurityDepositMinor: p.SecurityDepositMinor,
 		Currency:             p.Currency,
+		Photo:                p.Photo,
 		CreatedAt:            p.CreatedAt,
 	}
 }
@@ -162,6 +173,7 @@ func toListingDTO(p *Property) *ListingDTO {
 		MonthlyRentMinor:     p.MonthlyRentMinor,
 		SecurityDepositMinor: p.SecurityDepositMinor,
 		Currency:             p.Currency,
+		Photo:                p.Photo,
 		CreatedAt:            p.CreatedAt,
 	}
 }
