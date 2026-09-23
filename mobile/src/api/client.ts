@@ -208,6 +208,7 @@ export async function upload<T>(url: string, form: FormData): Promise<T> {
 
 export function mediaUrl(key: string | null | undefined): string | null {
   if (!key) return null;
+  if (/^[a-z]+:\/\//i.test(key)) return key;
   const clean = key.replace(/^\/+/, '');
   return `${API_BASE_URL}/storage/${clean}`;
 }

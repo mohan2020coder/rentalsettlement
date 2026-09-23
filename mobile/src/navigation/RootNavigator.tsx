@@ -10,6 +10,7 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 import TenancyDetailScreen from '../screens/home/TenancyDetailScreen';
 import NewTenancyScreen from '../screens/home/NewTenancyScreen';
 import PropertyFormScreen from '../screens/properties/PropertyFormScreen';
+import PropertyDetailScreen from '../screens/properties/PropertyDetailScreen';
 import ApplicationFormScreen from '../screens/discover/ApplicationFormScreen';
 import ApplicationsScreen from '../screens/discover/ApplicationsScreen';
 import AgreementScreen from '../screens/agreement/AgreementScreen';
@@ -65,6 +66,11 @@ export default function RootNavigator() {
               options={({ route }) => ({
                 title: route.params?.propertyId ? 'Edit property' : 'New property',
               })}
+            />
+            <Stack.Screen
+              name="PropertyDetail"
+              component={PropertyDetailScreen}
+              options={{ title: 'Property' }}
             />
             <Stack.Screen
               name="ApplicationForm"

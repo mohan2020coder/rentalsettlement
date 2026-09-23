@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"rental-settlement/backend/pkg/response"
+	"rental-settlement/backend/pkg/storage"
 	"rental-settlement/backend/pkg/validator"
 )
 
@@ -39,8 +40,10 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req Updat
 	if req.Phone != "" && !validator.IsValidPhone(req.Phone) {
 		details["phone"] = "invalid phone number"
 	}
-	if req.Photo != "" && len(req.Photo) > 500 {
-		details["photo"] = "photo reference too long"
+	if req.Photo != "" {
+		if err := storage.ValidateKey(req.Photo); err != nil {
+			details["photo"] = "photo must reference platform storage"
+		}
 	}
 	if len(details) > 0 {
 		return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: details}
@@ -56,6 +59,8 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, req Updat
 	}
 	if req.Photo != "" {
 		u.ProfilePhoto = &req.Photo
+	} else {
+		u.ProfilePhoto = nil
 	}
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, err

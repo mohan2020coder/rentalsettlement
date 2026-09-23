@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { get, mediaUrl } from '../../api/client';
 import { Listing } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { Button, EmptyState, ErrorView, Input, LoadingView, PropertyImage, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
+import { Button, EmptyState, ErrorView, Input, Lightbox, LoadingView, PhotoStrip, PropertyImage, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
 import { formatMoney, humanize } from '../../utils/format';
 import { RootStackParamList } from '../../navigation/types';
 import { theme } from '../../theme';
@@ -19,6 +19,7 @@ export default function DiscoverScreen() {
   const [maxRent, setMaxRent] = useState('');
   const [bedrooms, setBedrooms] = useState('');
   const [applied, setApplied] = useState(0);
+  const [preview, setPreview] = useState<{ uris: string[]; index: number } | null>(null);
 
   const toMinor = (rupees: string): number => {
     const n = parseFloat(rupees);
@@ -48,6 +49,11 @@ export default function DiscoverScreen() {
 
   const list = listings.data ?? [];
   const hasFilters = !!(city.trim() || maxRent.trim() || bedrooms.trim());
+
+  const galleryUris = (l: Listing): string[] => {
+    const keys = l.photos?.length ? l.photos : l.photo ? [l.photo] : [];
+    return keys.map((k) => mediaUrl(k)).filter((u): u is string => !!u);
+  };
 
   return (
     <Screen scroll refreshing={listings.loading} onRefresh={listings.reload}>
@@ -93,64 +99,92 @@ export default function DiscoverScreen() {
           subtitle="Try widening your filters, or check back later when landlords list properties."
         />
       ) : (
-        list.map((l) => (
-          <View key={l.id} style={styles.card}>
-            <PropertyImage uri={mediaUrl(l.photo)} name={l.property_name.charAt(0) || 'P'} style={styles.image} />
-            <View style={styles.body}>
-              <View style={styles.headRow}>
-                <Text style={styles.name}>{l.property_name}</Text>
-                {l.furnishing_status ? (
-                  <StatusBadge label={humanize(l.furnishing_status)} />
-                ) : null}
-              </View>
-              <Text style={styles.sub}>
-                {[l.locality, l.city, l.state].filter(Boolean).join(', ') || 'Location not set'}
-              </Text>
-              <View style={styles.roomRow}>
-                <View style={styles.roomPill}>
-                  <Ionicons name="bed-outline" size={13} color={theme.colors.textSubtle} />
-                  <Text style={styles.roomText}>
-                    {l.bedrooms ? `${l.bedrooms} BHK` : l.property_type.replace(/_/g, ' ')}
-                  </Text>
+        list.map((l) => {
+          const uris = galleryUris(l);
+          return (
+            <View key={l.id} style={styles.card}>
+              <Pressable
+                style={({ pressed }) => pressed && { opacity: 0.9 }}
+                onPress={() => (uris.length ? setPreview({ uris, index: 0 }) : null)}
+              >
+                <PropertyImage uri={mediaUrl(l.photo)} name={l.property_name.charAt(0) || 'P'} style={styles.image} />
+              </Pressable>
+              <View style={styles.body}>
+                <Pressable
+                  style={({ pressed }) => [styles.bodyLink, pressed && { opacity: 0.7 }]}
+                  onPress={() => navigation.navigate('PropertyDetail', { propertyId: l.id })}
+                >
+                <View style={styles.headRow}>
+                  <Text style={styles.name}>{l.property_name}</Text>
+                  {l.furnishing_status ? (
+                    <StatusBadge label={humanize(l.furnishing_status)} />
+                  ) : null}
                 </View>
-                {l.bathrooms ? (
-                  <View style={styles.roomPill}>
-                    <Ionicons name="water-outline" size={13} color={theme.colors.textSubtle} />
-                    <Text style={styles.roomText}>{l.bathrooms} bath</Text>
-                  </View>
-                ) : null}
-                <View style={styles.roomPill}>
-                  <Ionicons name="shield-checkmark-outline" size={13} color={theme.colors.textSubtle} />
-                  <Text style={styles.roomText}>{formatMoney(l.security_deposit_minor, l.currency)} deposit</Text>
-                </View>
-              </View>
-              {l.description ? (
-                <Text style={styles.desc} numberOfLines={2}>
-                  {l.description}
+                <Text style={styles.sub}>
+                  {[l.locality, l.city, l.state].filter(Boolean).join(', ') || 'Location not set'}
                 </Text>
-              ) : null}
-              <View style={styles.footer}>
-                <View>
-                  <Text style={styles.rent}>{formatMoney(l.monthly_rent_minor, l.currency)}</Text>
-                  <Text style={styles.rentPer}>per month</Text>
+                {uris.length > 1 ? (
+                  <Pressable
+                    style={styles.stripWrap}
+                    onPress={() => setPreview({ uris, index: 0 })}
+                  >
+                    <PhotoStrip uris={uris} />
+                  </Pressable>
+                ) : null}
+                <View style={styles.roomRow}>
+                  <View style={styles.roomPill}>
+                    <Ionicons name="bed-outline" size={13} color={theme.colors.textSubtle} />
+                    <Text style={styles.roomText}>
+                      {l.bedrooms ? `${l.bedrooms} BHK` : l.property_type.replace(/_/g, ' ')}
+                    </Text>
+                  </View>
+                  {l.bathrooms ? (
+                    <View style={styles.roomPill}>
+                      <Ionicons name="water-outline" size={13} color={theme.colors.textSubtle} />
+                      <Text style={styles.roomText}>{l.bathrooms} bath</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.roomPill}>
+                    <Ionicons name="shield-checkmark-outline" size={13} color={theme.colors.textSubtle} />
+                    <Text style={styles.roomText}>{formatMoney(l.security_deposit_minor, l.currency)} deposit</Text>
+                  </View>
                 </View>
-                <Button
-                  label="Request visit"
-                  small
-                  onPress={() =>
-                    navigation.navigate('ApplicationForm', {
-                      propertyId: l.id,
-                      propertyName: l.property_name,
-                      monthlyRentMinor: l.monthly_rent_minor,
-                      currency: l.currency,
-                    })
-                  }
-                />
+                {l.description ? (
+                  <Text style={styles.desc} numberOfLines={2}>
+                    {l.description}
+                  </Text>
+                ) : null}
+                </Pressable>
+                <View style={styles.footer}>
+                  <View>
+                    <Text style={styles.rent}>{formatMoney(l.monthly_rent_minor, l.currency)}</Text>
+                    <Text style={styles.rentPer}>per month</Text>
+                  </View>
+                  <Button
+                    label="Request visit"
+                    small
+                    onPress={() =>
+                      navigation.navigate('ApplicationForm', {
+                        propertyId: l.id,
+                        propertyName: l.property_name,
+                        monthlyRentMinor: l.monthly_rent_minor,
+                        currency: l.currency,
+                      })
+                    }
+                  />
+                </View>
               </View>
             </View>
-          </View>
-        ))
+);
+        })
       )}
+
+      <Lightbox
+        visible={!!preview}
+        uris={preview?.uris ?? []}
+        initialIndex={preview?.index ?? 0}
+        onClose={() => setPreview(null)}
+      />
     </Screen>
   );
 }
@@ -178,7 +212,9 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   image: { height: 120 },
+  stripWrap: { marginTop: theme.spacing.sm },
   body: { padding: theme.spacing.lg },
+  bodyLink: { margin: -theme.spacing.lg, padding: theme.spacing.lg, marginBottom: 0 },
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing.sm },
   name: { fontSize: theme.text.heading, fontWeight: '700', color: theme.colors.text, flex: 1 },
   sub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },

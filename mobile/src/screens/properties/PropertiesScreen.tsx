@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { get, mediaUrl } from '../../api/client';
 import { Property, Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { Button, EmptyState, ErrorView, LoadingView, PropertyImage, Screen, SearchBar, ScreenTitle, StatusBadge } from '../../components/ui';
+import { Badge, Button, EmptyState, ErrorView, LoadingView, PropertyImage, Screen, SearchBar, ScreenTitle } from '../../components/ui';
 import { RootStackParamList } from '../../navigation/types';
 import { formatDate } from '../../utils/format';
 import { theme } from '../../theme';
@@ -19,16 +19,37 @@ export default function PropertiesScreen() {
   const tenancies = useLoad(async () => get<Tenancy[]>('/tenancies'), [], { refreshOnFocus: true });
 
   const tenancyMap = useMemo(() => {
-    const map: Record<string, { active: number; invited: number }> = {};
+    const map: Record<string, { active: number; invited: number; tenancies: Tenancy[] }> = {};
     for (const t of tenancies.data ?? []) {
       const key = t.property_id;
-      const entry = map[key] ?? { active: 0, invited: 0 };
+      const entry = map[key] ?? { active: 0, invited: 0, tenancies: [] };
       if (t.status === 'ACTIVE' || t.status === 'NOTICE_GIVEN' || t.status === 'MOVE_OUT') entry.active += 1;
       if (t.status === 'INVITED') entry.invited += 1;
+      entry.tenancies.push(t);
       map[key] = entry;
     }
     return map;
   }, [tenancies.data]);
+
+  const stageFor = (tens: Tenancy[], listed: boolean) => {
+    let anyActive = false;
+    let anyMove = false;
+    let anyInvited = false;
+    let anySettled = false;
+    for (const t of tens) {
+      if (t.status === 'ACTIVE' || t.status === 'NOTICE_GIVEN') anyActive = true;
+      if (t.status === 'MOVE_OUT') anyMove = true;
+      if (t.status === 'INVITED') anyInvited = true;
+      if (t.status === 'SETTLED') anySettled = true;
+    }
+    if (anyActive) return { label: 'Occupied', color: theme.colors.success };
+    if (anyMove) return { label: 'Move-out', color: theme.colors.warning };
+    if (anyInvited) return { label: 'Invite pending', color: theme.colors.warning };
+    if (anySettled) return { label: 'Completed', color: theme.colors.primary };
+    return listed
+      ? { label: 'Available', color: theme.colors.primary }
+      : { label: 'Not listed', color: theme.colors.textSubtle };
+  };
 
   if (props.loading) return <LoadingView label="Loading properties…" />;
   if (props.error) return <ErrorView message={props.error} onRetry={props.reload} />;
@@ -81,11 +102,12 @@ export default function PropertiesScreen() {
           const t = tenancyMap[p.id];
           const activeCount = t?.active ?? 0;
           const invitedCount = t?.invited ?? 0;
+          const stage = stageFor(t?.tenancies ?? [], !!p.listed);
           return (
             <Pressable
               key={p.id}
               style={({ pressed }) => [styles.propertyCard, pressed && { opacity: 0.92 }]}
-              onPress={() => navigation.navigate('PropertyForm', { propertyId: p.id })}
+              onPress={() => navigation.navigate('PropertyDetail', { propertyId: p.id })}
             >
               <PropertyImage uri={mediaUrl(p.photo)} name={p.property_name} height={120} />
               <View style={styles.propertyBody}>
@@ -99,7 +121,7 @@ export default function PropertiesScreen() {
                     </Text>
                   </View>
                   <View style={styles.badgeWrap}>
-                    <StatusBadge label={p.status.replace(/_/g, ' ')} />
+                    <Badge label={stage.label} color={stage.color} />
                   </View>
                 </View>
                 <View style={styles.chipRow}>

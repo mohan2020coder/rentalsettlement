@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ComponentProps } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -15,6 +16,7 @@ import {
   Image,
   ImageStyle,
   TextStyle,
+  useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
@@ -437,10 +439,12 @@ export function Avatar({
   name,
   size = 44,
   color,
+  uri,
 }: {
   name: string;
   size?: number;
   color?: string;
+  uri?: string | null;
 }) {
   const initials = name
     .split(' ')
@@ -456,7 +460,15 @@ export function Avatar({
         { width: size, height: size, borderRadius: size / 2, backgroundColor: `${bg}1F` },
       ]}
     >
-      <Text style={[styles.avatarText, { color: bg, fontSize: size * 0.38 }]}>{initials || '?'}</Text>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          resizeMode="cover"
+        />
+      ) : (
+        <Text style={[styles.avatarText, { color: bg, fontSize: size * 0.38 }]}>{initials || '?'}</Text>
+      )}
     </View>
   );
 }
@@ -465,16 +477,18 @@ export function AppHeader({
   name,
   role,
   right,
+  uri,
 }: {
   name: string;
   role?: string;
   right?: React.ReactNode;
+  uri?: string | null;
 }) {
   return (
     <View style={styles.appHeader}>
       <View style={styles.appHeaderLeft}>
         <View style={styles.appHeaderAvatarWrap}>
-          <Avatar name={name} size={48} />
+          <Avatar name={name} size={48} uri={uri} />
         </View>
         <View style={styles.appHeaderCopy}>
           <Text style={styles.appHeaderGreeting}>Hello,</Text>
@@ -756,6 +770,98 @@ export function PropertyImage({
     );
   }
   return <PropertyImagePlaceholder name={name} height={height} style={style} />;
+}
+
+interface LightboxProps {
+  visible: boolean;
+  uris: string[];
+  initialIndex?: number;
+  onClose: () => void;
+}
+
+export function Lightbox({ visible, uris, initialIndex = 0, onClose }: LightboxProps) {
+  const { width } = useWindowDimensions();
+  const [index, setIndex] = useState(initialIndex);
+
+  useEffect(() => {
+    if (visible) setIndex(Math.min(initialIndex, Math.max(uris.length - 1, 0)));
+  }, [visible, initialIndex, uris.length]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.lightbox}>
+        <View style={styles.lightboxTop}>
+          {uris.length > 1 ? (
+            <Text style={styles.lightboxCount}>
+              {Math.min(index + 1, uris.length)} / {uris.length}
+            </Text>
+          ) : (
+            <View />
+          )}
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => [styles.lightboxClose, pressed && { opacity: 0.7 }]}
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={26} color="#FFFFFF" />
+          </Pressable>
+        </View>
+        {uris.length === 0 ? null : (
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            bounces={false}
+            onMomentumScrollEnd={(e) => {
+              const i = Math.round(e.nativeEvent.contentOffset.x / width);
+              setIndex(Math.max(0, Math.min(i, uris.length - 1)));
+            }}
+          >
+            {uris.map((u, i) => (
+              <Image
+                key={`${u}-${i}`}
+                source={{ uri: u }}
+                style={{ width, height: '100%' }}
+                resizeMode="contain"
+              />
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+interface PhotoStripProps {
+  uris: string[];
+  cover?: string | null;
+  size?: number;
+}
+
+export function PhotoStrip({ uris, cover, size = 64 }: PhotoStripProps) {
+  const list = uris.length ? uris : cover ? [cover] : [];
+  if (list.length === 0) return null;
+  const shown = list.slice(0, 3);
+  const extra = list.length - shown.length;
+  return (
+    <View style={styles.photoStripRow}>
+      {shown.map((u, i) => (
+        <View key={`${u}-${i}`} style={[styles.photoStripThumb, { width: size, height: size }]}>
+          <Image source={{ uri: u }} style={{ width: size, height: size }} resizeMode="cover" />
+          {i === 0 && list.length > 1 ? (
+            <View style={[styles.photoStripZag, { position: 'absolute', right: 6, bottom: 6 }]}>
+              <Ionicons name="images-outline" size={12} color={theme.colors.white} />
+            </View>
+          ) : null}
+        </View>
+      ))}
+      {extra > 0 ? (
+        <View style={[styles.photoStripExtra, { width: size, height: size }]}>
+          <Text style={styles.photoStripExtraText}>+{extra}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -1170,6 +1276,51 @@ const styles = StyleSheet.create({
   pillText: { fontSize: theme.text.caption, fontWeight: '600', color: theme.colors.textSubtle },
   pillTextActive: { color: theme.colors.white },
   propertyImage: { borderRadius: theme.radius.md },
+  lightbox: { flex: 1, backgroundColor: 'rgba(5,8,20,0.96)' },
+  lightboxTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 14,
+    paddingHorizontal: 18,
+  },
+  lightboxCount: { color: 'rgba(255,255,255,0.85)', fontSize: theme.text.caption, fontWeight: '700' },
+  lightboxClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoStripRow: { flexDirection: 'row', gap: theme.spacing.sm },
+  photoStripThumb: {
+    borderRadius: theme.radius.sm,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.primaryLight,
+  },
+  photoStripZag: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(11,87,208,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoStripExtra: {
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoStripExtraText: { color: theme.colors.textSubtle, fontSize: theme.text.body, fontWeight: '800' },
   propertyPlaceholder: {
     borderRadius: theme.radius.md,
     overflow: 'hidden',

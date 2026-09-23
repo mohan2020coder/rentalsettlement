@@ -52,12 +52,12 @@ func (h *Handler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	dto, err := h.svc.Get(c.Request.Context(), authctx.UserID(c), id)
+	dto, err := h.svc.GetDTO(c.Request.Context(), authctx.UserID(c), id)
 	if err != nil {
 		response.Abort(c, err)
 		return
 	}
-	response.OK(c, toDTO(dto), nil)
+	response.OK(c, dto, nil)
 }
 
 // Accept handles POST /api/v1/tenancies/:id/accept.

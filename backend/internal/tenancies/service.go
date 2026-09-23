@@ -153,6 +153,19 @@ func (s *Service) Get(ctx context.Context, userID uuid.UUID, tenancyID uuid.UUID
 	return t, nil
 }
 
+// GetDTO returns a tenancy DTO (with the property name) if the caller is a party.
+func (s *Service) GetDTO(ctx context.Context, userID uuid.UUID, tenancyID uuid.UUID) (*TenancyDTO, error) {
+	t, err := s.Get(ctx, userID, tenancyID)
+	if err != nil {
+		return nil, err
+	}
+	name, err := s.propertyName(ctx, t.PropertyID)
+	if err != nil {
+		return nil, err
+	}
+	return toDTOWithProperty(t, name), nil
+}
+
 // CheckAccess is a convenience access guard used by other modules.
 func (s *Service) CheckAccess(ctx context.Context, userID uuid.UUID, tenancyID uuid.UUID) (*Tenancy, error) {
 	return s.Get(ctx, userID, tenancyID)
@@ -164,11 +177,46 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]TenancyDTO, err
 	if err != nil {
 		return nil, err
 	}
+	names, err := s.propertyNames(ctx, list)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]TenancyDTO, 0, len(list))
 	for i := range list {
-		out = append(out, *toDTO(&list[i]))
+		out = append(out, *toDTOWithProperty(&list[i], names[list[i].PropertyID]))
 	}
 	return out, nil
+}
+
+// propertyNames resolves the property name for one property.
+func (s *Service) propertyName(ctx context.Context, propertyID uuid.UUID) (string, error) {
+	names, err := s.propertyNames(ctx, []Tenancy{{PropertyID: propertyID}})
+	if err != nil {
+		return "", err
+	}
+	return names[propertyID], nil
+}
+
+// propertyNames resolves property names for a set of tenancies in one lookup.
+func (s *Service) propertyNames(ctx context.Context, tenancies []Tenancy) (map[uuid.UUID]string, error) {
+	seen := map[uuid.UUID]struct{}{}
+	ids := make([]uuid.UUID, 0, len(tenancies))
+	for i := range tenancies {
+		id := tenancies[i].PropertyID
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	res, err := s.propRepo.PropertyNames(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		res = map[uuid.UUID]string{}
+	}
+	return res, nil
 }
 
 // UpdateStatus performs role-aware status transitions.

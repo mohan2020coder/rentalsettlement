@@ -2,6 +2,7 @@ package properties
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -69,7 +70,11 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateProper
 		MonthlyRentMinor:     req.MonthlyRentMinor,
 		SecurityDepositMinor: req.SecurityDepositMinor,
 		Currency:             defaultCurrency(req.Currency),
-		Photo:                nullableString(req.Photo),
+		Photos:               buildPhotos(req.Photos),
+	}
+	if len(prop.Photos) > 0 {
+		cover := prop.Photos[0].FilePath
+		prop.Photo = &cover
 	}
 	if err := s.repo.Create(ctx, prop); err != nil {
 		return nil, err
@@ -99,14 +104,25 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]PropertyDTO, er
 	return out, nil
 }
 
-// Get returns one property if the caller owns it.
+// Get returns one property if the caller owns it, it is an active marketplace
+// listing, or the caller is party to a tenancy on it.
 func (s *Service) Get(ctx context.Context, userID uuid.UUID, propertyID uuid.UUID) (*PropertyDTO, error) {
 	p, err := s.repo.ByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
 	}
 	if p.LandlordID != userID {
-		return nil, response.NewError(403, "FORBIDDEN", "You do not have access to this property")
+		accessible := p.Listed && p.Status == StatusActive
+		if !accessible {
+			ok, terr := s.repo.HasTenancyMember(ctx, userID, propertyID)
+			if terr != nil {
+				return nil, terr
+			}
+			accessible = ok
+		}
+		if !accessible {
+			return nil, response.NewError(403, "FORBIDDEN", "You do not have access to this property")
+		}
 	}
 	return toDTO(p), nil
 }
@@ -128,6 +144,13 @@ func (s *Service) Update(ctx context.Context, userID uuid.UUID, propertyID uuid.
 			return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"photo": "photo must reference platform storage"}}
 		}
 	}
+	if req.Photos != nil {
+		for i, key := range *req.Photos {
+			if err := storage.ValidateKey(key); err != nil {
+				return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"photos": fmt.Sprintf("photo at index %d must reference platform storage", i)}}
+			}
+		}
+	}
 	if req.PropertyType != "" {
 		if err := validator.OneOf("property_type", req.PropertyType, TypeApartment, TypeHouse, TypeVilla, TypePG, TypeOther); err != nil {
 			return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"property_type": err.Error()}}
@@ -143,6 +166,26 @@ func (s *Service) Update(ctx context.Context, userID uuid.UUID, propertyID uuid.
 
 	if p.Listed && p.MonthlyRentMinor <= 0 {
 		return nil, &response.AppError{Status: 400, Code: "VALIDATION_ERROR", Message: "Invalid request", Details: map[string]any{"listed": "a monthly rent is required to list the property on the marketplace"}}
+	}
+
+	if req.Photos != nil {
+		keys := make([]string, 0, len(*req.Photos))
+		for _, key := range *req.Photos {
+			if key != "" {
+				keys = append(keys, key)
+			}
+		}
+		if err := s.repo.ReplacePhotos(ctx, p.ID, keys); err != nil {
+			return nil, err
+		}
+		p.Photos = buildPhotos(keys)
+		switch {
+		case len(keys) > 0:
+			cover := keys[0]
+			p.Photo = &cover
+		default:
+			p.Photo = nil
+		}
 	}
 
 	if err := s.repo.Update(ctx, p); err != nil {
@@ -228,4 +271,20 @@ func nullableString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// buildPhotos maps storage keys to ordered PropertyPhoto rows.
+func buildPhotos(keys []string) []PropertyPhoto {
+	if len(keys) == 0 {
+		return []PropertyPhoto{}
+	}
+	photos := make([]PropertyPhoto, 0, len(keys))
+	for i, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		photos = append(photos, PropertyPhoto{FilePath: key, SortOrder: i})
+	}
+	return photos
 }

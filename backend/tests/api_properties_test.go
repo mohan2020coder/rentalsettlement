@@ -131,3 +131,59 @@ func TestPropertyValidation(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.Code, readBody(resp))
 	require.Contains(t, readBody(resp), "VALIDATION_ERROR")
 }
+
+func TestPropertyPhotos(t *testing.T) {
+	app, _, cleanup := NewTestApp(t)
+	defer cleanup()
+
+	name, email := landlordUser()
+	landlordAccess, _, _ := RegisterAndLogin(t, app, name, email, "password123", "LANDLORD")
+	const createBody = `{
+		"property_name": "Photo Test Villa",
+		"property_type": "VILLA",
+		"photo": "media/2026/09/cover.jpg",
+		"photos": ["media/2026/09/cover.jpg", "media/2026/09/living.jpg", "media/2026/09/kitchen.jpg"]
+	}`
+	resp := Perform(app, http.MethodPost, "/api/v1/properties", createBody, landlordAccess)
+	require.Equal(t, http.StatusCreated, resp.Code, readBody(resp))
+	var created struct {
+		Data struct {
+			ID     string   `json:"id"`
+			Photo  *string  `json:"photo"`
+			Photos []string `json:"photos"`
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(readBody(resp)), &created))
+	require.Equal(t, "media/2026/09/cover.jpg", *created.Data.Photo)
+	require.Equal(t, []string{"media/2026/09/cover.jpg", "media/2026/09/living.jpg", "media/2026/09/kitchen.jpg"}, created.Data.Photos)
+
+	// Invalid photo keys are rejected.
+	resp = Perform(app, http.MethodPost, "/api/v1/properties", `{"property_name":"Bad","property_type":"HOUSE","photos":["media/a/../../etc/passwd"]}`, landlordAccess)
+	require.Equal(t, http.StatusBadRequest, resp.Code, readBody(resp))
+
+	// Reorder/gallery replace keeps the cover in sync.
+	resp = Perform(app, http.MethodPatch, "/api/v1/properties/"+created.Data.ID, `{"photos":["media/2026/09/roof.jpg","media/2026/09/yard.jpg"]}`, landlordAccess)
+	require.Equal(t, http.StatusOK, resp.Code, readBody(resp))
+	var updated struct {
+		Data struct {
+			Photo  *string  `json:"photo"`
+			Photos []string `json:"photos"`
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(readBody(resp)), &updated))
+	require.Equal(t, "media/2026/09/roof.jpg", *updated.Data.Photo)
+	require.Equal(t, []string{"media/2026/09/roof.jpg", "media/2026/09/yard.jpg"}, updated.Data.Photos)
+
+	// GET returns the same gallery.
+	resp = Perform(app, http.MethodGet, "/api/v1/properties/"+created.Data.ID, "", landlordAccess)
+	require.Equal(t, http.StatusOK, resp.Code, readBody(resp))
+	require.NoError(t, json.Unmarshal([]byte(readBody(resp)), &updated))
+	require.Equal(t, []string{"media/2026/09/roof.jpg", "media/2026/09/yard.jpg"}, updated.Data.Photos)
+
+	// Clearing the gallery clears the cover too.
+	resp = Perform(app, http.MethodPatch, "/api/v1/properties/"+created.Data.ID, `{"photos":[]}`, landlordAccess)
+	require.Equal(t, http.StatusOK, resp.Code, readBody(resp))
+	require.NoError(t, json.Unmarshal([]byte(readBody(resp)), &updated))
+	require.Nil(t, updated.Data.Photo)
+	require.Equal(t, []string{}, updated.Data.Photos)
+}

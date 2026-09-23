@@ -35,6 +35,7 @@ type UpdateStatusRequest struct {
 type TenancyDTO struct {
 	ID                   uuid.UUID  `json:"id"`
 	PropertyID           uuid.UUID  `json:"property_id"`
+	PropertyName         string     `json:"property_name"`
 	LandlordID           uuid.UUID  `json:"landlord_id"`
 	TenantID             *uuid.UUID `json:"tenant_id"`
 	InvitedEmail         *string    `json:"invited_email,omitempty"`
@@ -53,9 +54,14 @@ type TenancyDTO struct {
 }
 
 func toDTO(t *Tenancy) *TenancyDTO {
+	return toDTOWithProperty(t, "")
+}
+
+func toDTOWithProperty(t *Tenancy, propertyName string) *TenancyDTO {
 	return &TenancyDTO{
 		ID:                   t.ID,
 		PropertyID:           t.PropertyID,
+		PropertyName:         propertyName,
 		LandlordID:           t.LandlordID,
 		TenantID:             t.TenantID,
 		InvitedEmail:         t.InvitedEmail,

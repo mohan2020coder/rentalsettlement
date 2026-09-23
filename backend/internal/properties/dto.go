@@ -1,6 +1,7 @@
 package properties
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,45 +12,47 @@ import (
 
 // CreatePropertyRequest is the create property payload.
 type CreatePropertyRequest struct {
-	PropertyName         string `json:"property_name"`
-	PropertyType         string `json:"property_type"`
-	AddressLine1         string `json:"address_line1"`
-	AddressLine2         string `json:"address_line2"`
-	Locality             string `json:"locality"`
-	City                 string `json:"city"`
-	State                string `json:"state"`
-	PostalCode           string `json:"postal_code"`
-	Bedrooms             *int   `json:"bedrooms"`
-	Bathrooms            *int   `json:"bathrooms"`
-	FurnishingStatus     string `json:"furnishing_status"`
-	Description          string `json:"description"`
-	Photo                string `json:"photo"`
-	Listed               bool   `json:"listed"`
-	MonthlyRentMinor     int64  `json:"monthly_rent_minor"`
-	SecurityDepositMinor int64  `json:"security_deposit_minor"`
-	Currency             string `json:"currency"`
+	PropertyName         string   `json:"property_name"`
+	PropertyType         string   `json:"property_type"`
+	AddressLine1         string   `json:"address_line1"`
+	AddressLine2         string   `json:"address_line2"`
+	Locality             string   `json:"locality"`
+	City                 string   `json:"city"`
+	State                string   `json:"state"`
+	PostalCode           string   `json:"postal_code"`
+	Bedrooms             *int     `json:"bedrooms"`
+	Bathrooms            *int     `json:"bathrooms"`
+	FurnishingStatus     string   `json:"furnishing_status"`
+	Description          string   `json:"description"`
+	Photo                string   `json:"photo"`
+	Photos               []string `json:"photos"`
+	Listed               bool     `json:"listed"`
+	MonthlyRentMinor     int64    `json:"monthly_rent_minor"`
+	SecurityDepositMinor int64    `json:"security_deposit_minor"`
+	Currency             string   `json:"currency"`
 }
 
 // UpdatePropertyRequest is the update property payload.
 type UpdatePropertyRequest struct {
-	PropertyName         string  `json:"property_name"`
-	PropertyType         string  `json:"property_type"`
-	AddressLine1         *string `json:"address_line1"`
-	AddressLine2         *string `json:"address_line2"`
-	Locality             *string `json:"locality"`
-	City                 *string `json:"city"`
-	State                *string `json:"state"`
-	PostalCode           *string `json:"postal_code"`
-	Bedrooms             *int    `json:"bedrooms"`
-	Bathrooms            *int    `json:"bathrooms"`
-	FurnishingStatus     *string `json:"furnishing_status"`
-	Description          *string `json:"description"`
-	Photo                *string `json:"photo"`
-	Status               string  `json:"status"`
-	Listed               *bool   `json:"listed"`
-	MonthlyRentMinor     *int64  `json:"monthly_rent_minor"`
-	SecurityDepositMinor *int64  `json:"security_deposit_minor"`
-	Currency             *string `json:"currency"`
+	PropertyName         string    `json:"property_name"`
+	PropertyType         string    `json:"property_type"`
+	AddressLine1         *string   `json:"address_line1"`
+	AddressLine2         *string   `json:"address_line2"`
+	Locality             *string   `json:"locality"`
+	City                 *string   `json:"city"`
+	State                *string   `json:"state"`
+	PostalCode           *string   `json:"postal_code"`
+	Bedrooms             *int      `json:"bedrooms"`
+	Bathrooms            *int      `json:"bathrooms"`
+	FurnishingStatus     *string   `json:"furnishing_status"`
+	Description          *string   `json:"description"`
+	Photo                *string   `json:"photo"`
+	Photos               *[]string `json:"photos"`
+	Status               string    `json:"status"`
+	Listed               *bool     `json:"listed"`
+	MonthlyRentMinor     *int64    `json:"monthly_rent_minor"`
+	SecurityDepositMinor *int64    `json:"security_deposit_minor"`
+	Currency             *string   `json:"currency"`
 }
 
 // PropertyDTO is the public property representation.
@@ -74,6 +77,7 @@ type PropertyDTO struct {
 	SecurityDepositMinor int64     `json:"security_deposit_minor"`
 	Currency             string    `json:"currency"`
 	Photo                *string   `json:"photo"`
+	Photos               []string  `json:"photos"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 
@@ -95,6 +99,7 @@ type ListingDTO struct {
 	SecurityDepositMinor int64     `json:"security_deposit_minor"`
 	Currency             string    `json:"currency"`
 	Photo                *string   `json:"photo"`
+	Photos               []string  `json:"photos"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 
@@ -128,7 +133,25 @@ func validateCreate(req CreatePropertyRequest) map[string]any {
 			details["photo"] = "photo must reference platform storage"
 		}
 	}
+	for i, key := range req.Photos {
+		if err := storage.ValidateKey(key); err != nil {
+			details["photos"] = fmt.Sprintf("photo at index %d must reference platform storage", i)
+			break
+		}
+	}
 	return details
+}
+
+// photoKeys returns the gallery storage keys ordered by sort order.
+func photoKeys(p *Property) []string {
+	if len(p.Photos) == 0 {
+		return []string{}
+	}
+	keys := make([]string, 0, len(p.Photos))
+	for _, photo := range p.Photos {
+		keys = append(keys, photo.FilePath)
+	}
+	return keys
 }
 
 func toDTO(p *Property) *PropertyDTO {
@@ -153,6 +176,7 @@ func toDTO(p *Property) *PropertyDTO {
 		SecurityDepositMinor: p.SecurityDepositMinor,
 		Currency:             p.Currency,
 		Photo:                p.Photo,
+		Photos:               photoKeys(p),
 		CreatedAt:            p.CreatedAt,
 	}
 }
@@ -174,6 +198,7 @@ func toListingDTO(p *Property) *ListingDTO {
 		SecurityDepositMinor: p.SecurityDepositMinor,
 		Currency:             p.Currency,
 		Photo:                p.Photo,
+		Photos:               photoKeys(p),
 		CreatedAt:            p.CreatedAt,
 	}
 }

@@ -117,6 +117,14 @@ export default function TenancyDetailScreen({
         </View>
       </View>
 
+      <SectionHeader title="Property" />
+      <ListItem
+        icon="business-outline"
+        title={label}
+        subtitle="Photos, details and rental context"
+        onPress={() => navigation.navigate('PropertyDetail', { propertyId: t.property_id })}
+      />
+
       <SectionHeader title="Documents & records" />
       <ListItem
         icon="document-text-outline"

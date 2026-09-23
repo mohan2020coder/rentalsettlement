@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { get, post, extractError } from '../../api/client';
+import { get, post, extractError, mediaUrl } from '../../api/client';
 import { AuditLogEntry, Dispute, InspectionSummary, Property, Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { useAuth } from '../../auth/AuthContext';
@@ -75,15 +75,32 @@ export default function HomeScreen() {
   const propNames = useMemo(() => {
     const map: Record<string, string> = {};
     for (const p of dash.data?.properties ?? []) map[p.id] = p.property_name;
+    for (const t of dash.data?.tenancies ?? []) {
+      map[t.property_id] = t.property_name ?? map[t.property_id] ?? '';
+    }
     return map;
-  }, [dash.data?.properties]);
+  }, [dash.data?.properties, dash.data?.tenancies]);
+
+  const tenancyNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const t of dash.data?.tenancies ?? []) {
+      map[t.id] = t.property_name ?? propNames[t.property_id] ?? '';
+    }
+    return map;
+  }, [dash.data?.tenancies, propNames]);
 
   if (dash.loading) return <LoadingView label="Loading your dashboard…" />;
   if (dash.error) return <ErrorView message={dash.error} onRetry={dash.reload} />;
 
   const { tenancies, properties } = dash.data!;
   const hasProperties = properties.length > 0;
-  const hasSettled = !isLandlord && tenancies.some((t) => t.status === 'SETTLED');
+  const occupying = (s: string) => ['INVITED', 'ACTIVE', 'NOTICE_GIVEN', 'MOVE_OUT'].includes(s);
+  const hasOngoingTenancy = tenancies.some((t) => occupying(t.status));
+  const settledTenancies = !isLandlord ? tenancies.filter((t) => t.status === 'SETTLED') : [];
+  const hasSettled = settledTenancies.length > 0 && !hasOngoingTenancy;
+  const settledNames = hasSettled
+    ? settledTenancies.map((t) => propNames[t.property_id] ?? t.property_name ?? '').filter(Boolean)
+    : [];
   const activeCount = tenancies.filter((t) => t.status === 'ACTIVE').length;
   const notes = unread.data?.unread_count ?? 0;
   const firstName = user?.name.split(' ')[0] ?? '';
@@ -112,6 +129,7 @@ export default function HomeScreen() {
       <AppHeader
         name={user?.name ?? ''}
         role={isLandlord ? 'Landlord' : 'Tenant'}
+        uri={user?.profile_photo ? mediaUrl(user.profile_photo) : null}
         right={
           <IconButton
             name="notifications-outline"
@@ -237,12 +255,20 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {hasSettled && (
+      {hasSettled && settledTenancies.length > 0 && (
         <View style={styles.settledCard}>
           <Ionicons name="checkmark-done-circle-outline" size={22} color={theme.colors.success} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.settledTitle}>Your rental is complete</Text>
-            <Text style={styles.settledText}>Browse Discover to find your next home.</Text>
+            <Text style={styles.settledTitle}>
+              {settledNames.length === 1
+                ? `${settledNames[0]} rental is complete`
+                : 'Past rentals are complete'}
+            </Text>
+            <Text style={styles.settledText}>
+              {settledNames.length === 1
+                ? 'Browse Discover to find your next home.'
+                : 'Browse Discover to find your next home.'}
+            </Text>
           </View>
           <Button
             label="Browse"
@@ -258,9 +284,9 @@ export default function HomeScreen() {
           {tenancies
             .filter((t) => t.status === 'INVITED')
             .map((t) => (
-              <View key={t.id} style={styles.inviteCard}>
-                <View style={styles.inviteInfo}>
-                  <Text style={styles.inviteTitle}>{propNames[t.property_id] ?? 'Rental property'}</Text>
+<View key={t.id} style={styles.inviteCard}>
+                  <View style={styles.inviteInfo}>
+                    <Text style={styles.inviteTitle}>{t.property_name || propNames[t.property_id] || 'Rental property'}</Text>
                   <Text style={styles.inviteSub}>Invited: {t.invited_email}</Text>
                   <Text style={styles.inviteRent}>{formatMoney(t.monthly_rent_minor, t.currency)}/mo</Text>
                 </View>
@@ -315,7 +341,7 @@ export default function HomeScreen() {
                 <Ionicons name="key-outline" size={18} color={theme.colors.primary} />
               </View>
               <View style={styles.tenancyInfo}>
-                <Text style={styles.tenancyName}>{propNames[t.property_id] ?? 'Rental property'}</Text>
+                <Text style={styles.tenancyName}>{t.property_name || propNames[t.property_id] || 'Rental property'}</Text>
                 <Text style={styles.tenancySub}>
                   {t.invited_email && t.status === 'INVITED'
                     ? `Invited: ${t.invited_email}`
@@ -341,13 +367,22 @@ export default function HomeScreen() {
           </View>
           {activityList.map((e) => {
             const m = activityMeta(e);
+            const inProperty = (e.entity_type || '').toLowerCase() === 'property';
+            const context = inProperty
+              ? e.entity_id
+                ? propNames[e.entity_id] ?? ''
+                : ''
+              : e.tenancy_id
+                ? tenancyNameMap[e.tenancy_id] ?? ''
+                : '';
+            const entityLabel = e.entity_type.replace(/_/g, ' ');
             return (
               <ActivityCard
                 key={e.id}
                 icon={m.icon}
                 color={m.color}
                 title={humanize(e.action)}
-                description={e.entity_type.replace(/_/g, ' ')}
+                description={context ? `${context} · ${entityLabel}` : entityLabel}
                 time={timeAgo(e.created_at)}
               />
             );

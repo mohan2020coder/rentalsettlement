@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { Alert, Image, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { RootStackScreenProps } from '../../navigation/types';
 import { get, post, patch, upload, mediaUrl, extractError, ApiClientError } from '../../api/client';
 import { Property, UploadRef } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { Button, Card, ErrorView, Input, LoadingView, Screen } from '../../components/ui';
+import { Button, Card, ErrorView, Input, Lightbox, LoadingView, Screen, StatusBadge } from '../../components/ui';
 import { theme } from '../../theme';
 
 const PROPERTY_TYPES = ['APARTMENT', 'HOUSE', 'VILLA', 'PG', 'OTHER'] as const;
 const FURNISHING = ['FURNISHED', 'SEMI_FURNISHED', 'UNFURNISHED'] as const;
+const MAX_PHOTOS = 8;
 
 export default function PropertyFormScreen({ route, navigation }: RootStackScreenProps<'PropertyForm'>) {
   const editing = !!route.params?.propertyId;
+  const initial = route.params?.initial;
   const existing = useLoad(
     async () => (route.params?.propertyId ? get<Property>(`/properties/${route.params.propertyId}`) : Promise.resolve(null)),
     [route.params?.propertyId],
@@ -32,34 +35,45 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
   const [listed, setListed] = useState(false);
   const [rent, setRent] = useState('');
   const [deposit, setDeposit] = useState('');
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
+    if (initial) {
+      applyProperty(initial);
+    }
+  }, [initial]);
+
+  React.useEffect(() => {
     if (existing.data) {
-      const p = existing.data;
-      setName(p.property_name);
-      setType(p.property_type);
-      setAddress(p.address_line1 ?? '');
-      setLocality(p.locality ?? '');
-      setCity(p.city ?? '');
-      setState(p.state ?? '');
-      setPostal(p.postal_code ?? '');
-      setBedrooms(p.bedrooms ? String(p.bedrooms) : '');
-      setBathrooms(p.bathrooms ? String(p.bathrooms) : '');
-      setFurnishing(p.furnishing_status ?? 'SEMI_FURNISHED');
-      setDescription(p.description ?? '');
-      setListed(p.listed);
-      setRent(minorToRupees(p.monthly_rent_minor));
-      setDeposit(minorToRupees(p.security_deposit_minor));
-      setPhoto(p.photo ?? null);
+      applyProperty(existing.data);
     }
   }, [existing.data]);
 
-  if (editing && existing.loading) return <LoadingView label="Loading property…" />;
-  if (editing && existing.error) return <ErrorView message={existing.error} onRetry={existing.reload} />;
+  const applyProperty = (p: Property) => {
+    setName(p.property_name);
+    setType(p.property_type);
+    setAddress(p.address_line1 ?? '');
+    setLocality(p.locality ?? '');
+    setCity(p.city ?? '');
+    setState(p.state ?? '');
+    setPostal(p.postal_code ?? '');
+    setBedrooms(p.bedrooms ? String(p.bedrooms) : '');
+    setBathrooms(p.bathrooms ? String(p.bathrooms) : '');
+    setFurnishing(p.furnishing_status ?? 'SEMI_FURNISHED');
+    setDescription(p.description ?? '');
+    setListed(p.listed);
+    setRent(minorToRupees(p.monthly_rent_minor));
+    setDeposit(minorToRupees(p.security_deposit_minor));
+    const gallery = p.photos?.length ? p.photos : p.photo ? [p.photo] : [];
+    setPhotos(gallery);
+  };
+
+  if (editing && !initial && existing.loading) return <LoadingView label="Loading property…" />;
+  if (editing && !initial && existing.error) return <ErrorView message={existing.error} onRetry={existing.reload} />;
 
   const toMinor = (rupees: string): number => {
     const n = parseFloat(rupees);
@@ -76,7 +90,7 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Allow photo library access to add a property picture.');
+        Alert.alert('Permission needed', 'Allow photo library access to add property pictures.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -100,13 +114,17 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
           form.append('file', { uri: asset.uri, name: `photo.${ext}`, type: mime } as unknown as Blob);
         }
         const ref = await upload<UploadRef>('/storage/upload', form);
-        setPhoto(ref.file_path);
+        setPhotos((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, ref.file_path]));
       } finally {
         setPhotoUploading(false);
       }
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Could not upload photo');
     }
+  };
+
+  const removePhoto = (key: string) => {
+    setPhotos((prev) => prev.filter((k) => k !== key));
   };
 
   const submit = async () => {
@@ -131,7 +149,8 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
       bathrooms: bathrooms ? parseInt(bathrooms, 10) : undefined,
       furnishing_status: furnishing,
       description: description || undefined,
-      photo: photo || null,
+      photos,
+      photo: photos[0] ?? null,
       listed,
       monthly_rent_minor: toMinor(rent),
       security_deposit_minor: toMinor(deposit),
@@ -166,6 +185,9 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
       ))}
     </View>
   );
+
+  const editingContext = existing.data;
+  const photoUris = photos.map((key) => mediaUrl(key)).filter((u): u is string => !!u);
 
   const listSwitch = (
     <Card style={listed ? styles.listCardActive : styles.listCard}>
@@ -214,26 +236,66 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
   return (
     <Screen keyboard scroll>
       <Text style={styles.pageTitle}>{editing ? 'Edit property' : 'New property'}</Text>
+      {editingContext ? (
+        <View style={styles.contextBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.contextName} numberOfLines={1}>
+              {editingContext.property_name}
+            </Text>
+            <Text style={styles.contextLocation}>
+              {[editingContext.locality, editingContext.city, editingContext.state].filter(Boolean).join(', ') ||
+                'Location not set'}
+            </Text>
+          </View>
+          <StatusBadge label={editingContext.status.replace(/_/g, ' ')} />
+        </View>
+      ) : null}
 
       <Text style={styles.label}>Property type</Text>
       {segmented(PROPERTY_TYPES, type, setType)}
 
       <Input label="Property name" value={name} onChangeText={setName} placeholder="E.g. Lakeview Apartment, 2BHK" />
 
-      <Card style={styles.photoCard}>
-        <Text style={styles.label}>Photo</Text>
-        {photo ? (
-          <View>
-            <Image source={{ uri: mediaUrl(photo) ?? undefined }} style={styles.photoPreview} resizeMode="cover" />
-            <View style={styles.photoActions}>
-              <Button label="Replace photo" variant="ghost" small onPress={() => void pickAndUpload()} loading={photoUploading} disabled={photoUploading} />
-              <Button label="Remove" variant="danger" small onPress={() => setPhoto(null)} />
-            </View>
-          </View>
-        ) : (
-          <Button label="Add a photo" variant="primary" onPress={() => void pickAndUpload()} loading={photoUploading} disabled={photoUploading} />
-        )}
-      </Card>
+      <View style={styles.photoSection}>
+        <View style={styles.photoHeader}>
+          <Text style={styles.label}>Photos</Text>
+          <Text style={styles.photoCount}>
+            {photos.length}/{MAX_PHOTOS}
+          </Text>
+        </View>
+        <Text style={styles.photoHint}>The first photo is used as the cover. Add up to {MAX_PHOTOS}.</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
+          {photos.map((key, idx) => (
+            <Pressable key={key} style={({ pressed }) => [styles.photoTile, pressed && { opacity: 0.85 }]} onPress={() => setPreviewIndex(idx)}>
+              <Image source={{ uri: mediaUrl(key) ?? undefined }} style={styles.photoThumb} resizeMode="cover" />
+              {idx === 0 ? (
+                <View style={styles.coverBadge}>
+                  <Text style={styles.coverBadgeText}>Cover</Text>
+                </View>
+              ) : null}
+              <Pressable style={styles.photoRemove} onPress={() => removePhoto(key)} hitSlop={6}>
+                <Ionicons name="close" size={14} color={theme.colors.white} />
+              </Pressable>
+            </Pressable>
+          ))}
+          {photos.length < MAX_PHOTOS ? (
+            <Pressable
+              style={({ pressed }) => [styles.photoAdd, pressed && { opacity: 0.7 }]}
+              onPress={() => void pickAndUpload()}
+              disabled={photoUploading}
+            >
+              {photoUploading ? (
+                <Ionicons name="sync-outline" size={24} color={theme.colors.primary} />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={24} color={theme.colors.primary} />
+                  <Text style={styles.photoAddText}>Add photo</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      </View>
 
       {listSwitch}
 
@@ -277,6 +339,13 @@ export default function PropertyFormScreen({ route, navigation }: RootStackScree
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Button label={editing ? 'Save changes' : 'Create property'} onPress={() => void submit()} loading={submitting} />
+
+      <Lightbox
+        visible={previewIndex != null}
+        uris={photoUris}
+        initialIndex={previewIndex ?? 0}
+        onClose={() => setPreviewIndex(null)}
+      />
     </Screen>
   );
 }
@@ -302,7 +371,72 @@ const styles = StyleSheet.create({
   listSub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
   listFields: { marginTop: theme.spacing.md },
   listHint: { fontSize: theme.text.small, color: theme.colors.textSubtle, marginTop: -4, marginBottom: theme.spacing.md },
-  photoCard: { marginBottom: theme.spacing.md },
-  photoPreview: { width: '100%', height: 150, borderRadius: theme.radius.md, backgroundColor: theme.colors.primaryLight },
-  photoActions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+  photoSection: { marginBottom: theme.spacing.md },
+  photoHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.xs,
+  },
+  photoCount: { fontSize: theme.text.caption, color: theme.colors.textSubtle, fontWeight: '700' },
+  photoHint: {
+    fontSize: theme.text.mini,
+    color: theme.colors.textSubtle,
+    marginBottom: theme.spacing.sm,
+  },
+  photoStrip: { gap: theme.spacing.md, paddingBottom: 2 },
+  photoTile: {
+    width: 140,
+    height: 96,
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.primaryLight,
+  },
+  photoThumb: { width: 140, height: 96 },
+  coverBadge: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    backgroundColor: 'rgba(11,87,208,0.9)',
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  coverBadgeText: { fontSize: theme.text.mini, color: theme.colors.white, fontWeight: '700', textTransform: 'uppercase' },
+  photoRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(23,28,54,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoAdd: {
+    width: 140,
+    height: 96,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.primaryLight,
+    backgroundColor: theme.colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoAddText: { fontSize: theme.text.caption, color: theme.colors.primary, fontWeight: '600', marginTop: 4 },
+  contextBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  contextName: { fontSize: theme.text.cardTitle, fontWeight: '700', color: theme.colors.text },
+  contextLocation: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
 });

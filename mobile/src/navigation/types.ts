@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { Property } from '../api/types';
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<
   RootStackParamList,
@@ -12,7 +13,8 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   TenancyDetail: { tenancyId: string; propertyName?: string };
   NewTenancy: undefined;
-  PropertyForm: { propertyId?: string };
+  PropertyForm: { propertyId?: string; initial?: Property };
+  PropertyDetail: { propertyId: string };
   ApplicationForm: {
     propertyId: string;
     propertyName: string;

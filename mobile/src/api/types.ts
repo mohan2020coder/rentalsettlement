@@ -47,6 +47,7 @@ export interface Property {
   security_deposit_minor: number;
   currency: string;
   photo?: string | null;
+  photos?: string[];
   created_at: string;
 }
 
@@ -72,6 +73,7 @@ export interface Listing {
   security_deposit_minor: number;
   currency: string;
   photo?: string | null;
+  photos?: string[];
   created_at: string;
 }
 
@@ -99,6 +101,7 @@ export interface Application {
 export interface Tenancy {
   id: string;
   property_id: string;
+  property_name?: string;
   landlord_id: string;
   tenant_id?: string | null;
   invited_email?: string;
@@ -418,6 +421,8 @@ export interface CreatePropertyPayload {
   security_deposit_minor?: number;
   currency?: string;
   listed?: boolean;
+  photo?: string | null;
+  photos?: string[];
 }
 
 export interface CreateApplicationPayload {
