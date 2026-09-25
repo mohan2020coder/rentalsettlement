@@ -23,6 +23,8 @@ import {
 } from '../../components/ui';
 import { formatDate, formatMoney, humanize, timeAgo } from '../../utils/format';
 import { RootStackParamList } from '../../navigation/types';
+import { openTabScreen } from '../../navigation/helpers';
+import { useUnread } from '../../notifications/UnreadContext';
 import { theme } from '../../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -38,6 +40,15 @@ function activityMeta(e: AuditLogEntry): ActivityMeta {
   return { icon: 'time-outline', color: theme.colors.textSubtle };
 }
 
+function InviteTerm({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.inviteTermRow}>
+      <Text style={styles.inviteTermLabel}>{label}</Text>
+      <Text style={styles.inviteTermValue}>{value}</Text>
+    </View>
+  );
+}
+
 interface DashData {
   tenancies: Tenancy[];
   properties: Property[];
@@ -50,6 +61,7 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const isLandlord = user?.role === 'LANDLORD';
   const [busy, setBusy] = useState<string | null>(null);
+  const [expandedInvite, setExpandedInvite] = useState<Record<string, boolean>>({});
 
   const dash = useLoad<DashData>(async () => {
     const tenancies = await get<Tenancy[]>('/tenancies');
@@ -70,7 +82,7 @@ export default function HomeScreen() {
   }, [isLandlord], { refreshOnFocus: true });
 
   const activity = useLoad(async () => get<AuditLogEntry[]>('/audit/me'), []);
-  const unread = useLoad(async () => get<{ unread_count: number }>('/notifications/unread-count'), []);
+  const { count: notes, refresh: refreshUnread } = useUnread();
 
   const propNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -102,7 +114,6 @@ export default function HomeScreen() {
     ? settledTenancies.map((t) => propNames[t.property_id] ?? t.property_name ?? '').filter(Boolean)
     : [];
   const activeCount = tenancies.filter((t) => t.status === 'ACTIVE').length;
-  const notes = unread.data?.unread_count ?? 0;
   const firstName = user?.name.split(' ')[0] ?? '';
   const activeTenancy = tenancies.find((t) => t.status === 'ACTIVE') ?? tenancies[0];
   const activityList = activity.data?.slice(0, 5) ?? [];
@@ -125,7 +136,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <Screen scroll refreshing={dash.loading} onRefresh={() => { dash.reload(); activity.reload(); unread.reload(); }}>
+    <Screen scroll refreshing={dash.loading} onRefresh={() => { dash.reload(); activity.reload(); refreshUnread(); }}>
       <AppHeader
         name={user?.name ?? ''}
         role={isLandlord ? 'Landlord' : 'Tenant'}
@@ -134,7 +145,7 @@ export default function HomeScreen() {
           <IconButton
             name="notifications-outline"
             badge={notes > 0}
-            onPress={() => navigation.navigate('Main', { screen: 'Notifications' })}
+            onPress={() => navigation.navigate('Notifications')}
           />
         }
       />
@@ -175,9 +186,15 @@ export default function HomeScreen() {
                 <Text style={styles.heroSub}>
                   {formatDate(activeTenancy.start_date)} → {formatDate(activeTenancy.end_date)}
                 </Text>
-                <Text style={styles.heroRent}>
-                  {formatMoney(activeTenancy.monthly_rent_minor, activeTenancy.currency)}/mo
-                </Text>
+                <View style={styles.heroMeta}>
+                  <Text style={styles.heroRent}>
+                    {formatMoney(activeTenancy.monthly_rent_minor, activeTenancy.currency)}/mo
+                  </Text>
+                  <View style={styles.heroDivider} />
+                  <Text style={styles.heroRent}>
+                    {formatMoney(activeTenancy.security_deposit_minor, activeTenancy.currency)} deposit
+                  </Text>
+                </View>
               </>
             ) : (
               <>
@@ -200,39 +217,7 @@ export default function HomeScreen() {
             <StatCard label="Open Disputes" value={dash.data!.openDisputes} icon="chatbubble-ellipses-outline" color={dash.data!.openDisputes > 0 ? theme.colors.danger : theme.colors.textSubtle} />
           </View>
         </View>
-      ) : (
-        activeTenancy && (
-          <View style={styles.tenantSummary}>
-            <View style={styles.tenantSummaryTop}>
-              <View>
-                <Text style={styles.tenantSummaryName}>
-                  {propNames[activeTenancy.property_id] ?? 'Your rental'}
-                </Text>
-                <Text style={styles.tenantSummarySub}>
-                  {formatDate(activeTenancy.start_date)} → {formatDate(activeTenancy.end_date)}
-                </Text>
-              </View>
-              <StatusBadge label={humanize(activeTenancy.status.split('_').join(' '))} />
-            </View>
-            <View style={styles.tenantSummaryMeta}>
-              <View style={styles.tenantSummaryItem}>
-                <Ionicons name="cash-outline" size={16} color={theme.colors.primary} />
-                <Text style={styles.tenantSummaryItemLabel}>Rent</Text>
-                <Text style={styles.tenantSummaryItemValue}>
-                  {formatMoney(activeTenancy.monthly_rent_minor, activeTenancy.currency)}
-                </Text>
-              </View>
-              <View style={styles.tenantSummaryItem}>
-                <Ionicons name="shield-checkmark-outline" size={16} color={theme.colors.success} />
-                <Text style={styles.tenantSummaryItemLabel}>Deposit</Text>
-                <Text style={styles.tenantSummaryItemValue}>
-                  {formatMoney(activeTenancy.security_deposit_minor, activeTenancy.currency)}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )
-      )}
+      ) : null}
 
       {!isLandlord && activeTenancy && (
         <View style={styles.quickActions}>
@@ -273,33 +258,86 @@ export default function HomeScreen() {
           <Button
             label="Browse"
             small
-            onPress={() => navigation.navigate('Main', { screen: 'Discover' })}
+            onPress={() => navigation.navigate('Discover')}
           />
         </View>
       )}
 
-      {tenancies.filter((t) => t.status === 'INVITED').length > 0 && (
+      {!isLandlord && tenancies.filter((t) => t.status === 'INVITED').length > 0 && (
         <>
           <SectionHeader title="Pending invitations" />
           {tenancies
             .filter((t) => t.status === 'INVITED')
-            .map((t) => (
-<View key={t.id} style={styles.inviteCard}>
-                  <View style={styles.inviteInfo}>
-                    <Text style={styles.inviteTitle}>{t.property_name || propNames[t.property_id] || 'Rental property'}</Text>
-                  <Text style={styles.inviteSub}>Invited: {t.invited_email}</Text>
-                  <Text style={styles.inviteRent}>{formatMoney(t.monthly_rent_minor, t.currency)}/mo</Text>
+            .map((t) => {
+              const expanded = !!expandedInvite[t.id];
+              return (
+                <View key={t.id} style={styles.inviteCard}>
+                  <Pressable
+                    style={styles.inviteHead}
+                    onPress={() =>
+                      setExpandedInvite((s) => ({ ...s, [t.id]: !expanded }))
+                    }
+                  >
+                    <View style={styles.inviteInfo}>
+                      <Text style={styles.inviteTitle}>{t.property_name || propNames[t.property_id] || 'Rental property'}</Text>
+                      <Text style={styles.inviteSub}>Invited: {t.invited_email}</Text>
+                      <Text style={styles.inviteRent}>{formatMoney(t.monthly_rent_minor, t.currency)}/mo</Text>
+                    </View>
+                    <Ionicons
+                      name={expanded ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={theme.colors.textSubtle}
+                    />
+                  </Pressable>
+                  {expanded ? (
+                    <>
+                      <View style={styles.inviteTerms}>
+                        <InviteTerm label="Monthly rent" value={`${formatMoney(t.monthly_rent_minor, t.currency)}/mo`} />
+                        <InviteTerm label="Security deposit" value={formatMoney(t.security_deposit_minor, t.currency)} />
+                        <InviteTerm label="Term" value={`${formatDate(t.start_date)} → ${formatDate(t.end_date)}`} />
+                        {t.notice_period_days ? (
+                          <InviteTerm label="Notice period" value={`${t.notice_period_days} days`} />
+                        ) : null}
+                        {t.rent_due_day ? (
+                          <InviteTerm label="Rent due" value={`Day ${t.rent_due_day}`} />
+                        ) : null}
+                      </View>
+                      <View style={styles.inviteActions}>
+                        <View style={{ flex: 1 }}>
+                          <Button
+                            label="Accept"
+                            small
+                            loading={busy === t.id}
+                            onPress={() => void respond(t, 'accept')}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Button
+                            label="Decline"
+                            variant="ghost"
+                            small
+                            loading={busy === t.id}
+                            onPress={() => void respond(t, 'decline')}
+                          />
+                        </View>
+                      </View>
+                      <Text style={styles.inviteNote}>
+                        Accepting makes you the tenant of this property. Review the terms above before accepting.
+                      </Text>
+                    </>
+                  ) : (
+                    <View style={styles.inviteActions}>
+                      <View style={{ flex: 1 }}>
+                        <Button label="Review terms & accept" small onPress={() => setExpandedInvite((s) => ({ ...s, [t.id]: true }))} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Button label="Decline" variant="ghost" small loading={busy === t.id} onPress={() => void respond(t, 'decline')} />
+                      </View>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.inviteActions}>
-                  <View style={{ flex: 1 }}>
-                    <Button label="Accept" small loading={busy === t.id} onPress={() => void respond(t, 'accept')} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Button label="Decline" variant="ghost" small loading={busy === t.id} onPress={() => void respond(t, 'decline')} />
-                  </View>
-                </View>
-              </View>
-            ))}
+              );
+            })}
         </>
       )}
 
@@ -317,7 +355,11 @@ export default function HomeScreen() {
           {isLandlord && (
             <Button
               label={hasProperties ? 'Create a tenancy' : 'Add your first property'}
-              onPress={() => (hasProperties ? navigation.navigate('NewTenancy') : navigation.navigate('PropertyForm', {}))}
+              onPress={() =>
+                hasProperties
+                  ? navigation.navigate('NewTenancy')
+                  : openTabScreen(navigation, 'Properties', 'PropertyForm', {})
+              }
             />
           )}
         </View>
@@ -416,30 +458,14 @@ const styles = StyleSheet.create({
   heroTitle: { color: theme.colors.white, fontSize: 20, fontWeight: '800', marginTop: 10 },
   heroSub: { color: theme.colors.primaryLight, fontSize: theme.text.caption, marginTop: 4 },
   heroRent: { color: theme.colors.white, fontSize: theme.text.body, fontWeight: '700', marginTop: 8 },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginTop: 8 },
+  heroDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
   stats: { flexDirection: 'row', gap: theme.spacing.md },
   statsCol: { flex: 1 },
-  tenantSummary: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
-    ...theme.shadow.card,
-  },
-  tenantSummaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  tenantSummaryName: { fontSize: theme.text.heading, fontWeight: '800', color: theme.colors.text },
-  tenantSummarySub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
-  tenantSummaryMeta: { flexDirection: 'row', gap: theme.spacing.md, marginTop: theme.spacing.lg },
-  tenantSummaryItem: { flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  tenantSummaryItemLabel: {
-    fontSize: theme.text.small,
-    color: theme.colors.textSubtle,
-    marginLeft: 6,
-    marginRight: 6,
-    fontWeight: '600',
-  },
-  tenantSummaryItemValue: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
   quickActions: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
   quickAction: {
     flex: 1,
@@ -482,10 +508,31 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.sm,
   },
-  inviteInfo: { marginBottom: theme.spacing.md },
+  inviteHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inviteInfo: { marginBottom: theme.spacing.md, flex: 1, paddingRight: theme.spacing.md },
   inviteTitle: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
   inviteSub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
   inviteRent: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.primaryDark, marginTop: 6 },
+  inviteTerms: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  inviteTermRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
+  inviteTermLabel: { fontSize: theme.text.small, color: theme.colors.textSubtle },
+  inviteTermValue: { fontSize: theme.text.small, fontWeight: '700', color: theme.colors.text },
+  inviteNote: {
+    color: theme.colors.textSubtle,
+    fontSize: theme.text.caption,
+    marginTop: theme.spacing.sm,
+  },
   inviteActions: { flexDirection: 'row', gap: theme.spacing.md },
   emptyCard: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, marginBottom: theme.spacing.sm },
   tenancyCard: {

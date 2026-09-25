@@ -4,7 +4,6 @@ import { RootStackScreenProps } from '../../navigation/types';
 import { get } from '../../api/client';
 import { InspectionSummary } from '../../api/types';
 import { useLoad } from '../../hooks';
-import { useAuth } from '../../auth/AuthContext';
 import { Button, EmptyState, ErrorView, ListItem, LoadingView, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
 import { formatDate, humanize } from '../../utils/format';
 import { theme } from '../../theme';
@@ -14,8 +13,6 @@ export default function InspectionsScreen({
   navigation,
 }: RootStackScreenProps<'Inspections'>) {
   const { tenancyId } = route.params;
-  const { user } = useAuth();
-  const isLandlord = user?.role === 'LANDLORD';
 
   const list = useLoad(
     async () => get<InspectionSummary[]>(`/inspections/tenancy/${tenancyId}`),
@@ -42,15 +39,13 @@ export default function InspectionsScreen({
             onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_OUT' })}
             icon="log-out-outline"
           />
-          {isLandlord && (
-            <Button
-              label="Move-in"
-              small
-              variant="secondary"
-              onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_IN' })}
-              icon="log-in-outline"
-            />
-          )}
+          <Button
+            label="Move-in"
+            small
+            variant="secondary"
+            onPress={() => navigation.navigate('NewInspection', { tenancyId, kind: 'MOVE_IN' })}
+            icon="log-in-outline"
+          />
         </View>
       </View>
 

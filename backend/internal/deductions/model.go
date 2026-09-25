@@ -40,20 +40,36 @@ const (
 // deduction, proposed against a tenancy. The platform never handles money:
 // the agreed amount is informational for an off-platform refund.
 type DeductionClaim struct {
-	ID                 uuid.UUID `gorm:"primaryKey;type:uuid;default:gen_random_uuid()" json:"id"`
-	TenancyID          uuid.UUID `gorm:"column:tenancy_id;type:uuid" json:"tenancy_id"`
-	CreatedBy          uuid.UUID `gorm:"column:created_by;type:uuid" json:"created_by"`
-	Category           string    `json:"category"`
-	Title              string    `json:"title"`
-	Description        *string   `json:"description"`
-	ClaimedAmountMinor int64     `gorm:"column:claimed_amount_minor" json:"claimed_amount_minor"`
-	Currency           string    `json:"currency"`
-	Status             string    `json:"status"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 uuid.UUID       `gorm:"primaryKey;type:uuid;default:gen_random_uuid()" json:"id"`
+	TenancyID          uuid.UUID       `gorm:"column:tenancy_id;type:uuid" json:"tenancy_id"`
+	CreatedBy          uuid.UUID       `gorm:"column:created_by;type:uuid" json:"created_by"`
+	Category           string          `json:"category"`
+	Title              string          `json:"title"`
+	Description        *string         `json:"description"`
+	ClaimedAmountMinor int64           `gorm:"column:claimed_amount_minor" json:"claimed_amount_minor"`
+	Currency           string          `json:"currency"`
+	Status             string          `json:"status"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	Evidence           []ClaimEvidence `gorm:"-" json:"evidence,omitempty"`
 }
 
 func (DeductionClaim) TableName() string { return "deduction_claims" }
+
+// ClaimEvidence is a photo/video attachment backing a deduction claim. Either
+// party can attach files so the claimed amount is transparent and reviewable.
+type ClaimEvidence struct {
+	ID         uuid.UUID `gorm:"primaryKey;type:uuid;default:gen_random_uuid()" json:"id"`
+	ClaimID    uuid.UUID `gorm:"column:claim_id;type:uuid" json:"claim_id"`
+	UploadedBy uuid.UUID `gorm:"column:uploaded_by;type:uuid" json:"uploaded_by"`
+	FilePath   string    `gorm:"column:file_path" json:"file_path"`
+	MimeType   string    `gorm:"column:mime_type" json:"mime_type"`
+	FileSize   int64     `gorm:"column:file_size" json:"file_size"`
+	SHA256Hash string    `gorm:"column:sha256_hash" json:"sha256_hash"`
+	UploadedAt time.Time `json:"uploaded_at"`
+}
+
+func (ClaimEvidence) TableName() string { return "deduction_claim_evidence" }
 
 // Dispute wraps a claim in structured negotiation.
 type Dispute struct {

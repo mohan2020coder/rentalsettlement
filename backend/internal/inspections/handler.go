@@ -73,6 +73,21 @@ func (h *Handler) List(c *gin.Context) {
 	response.OK(c, toSummaries(list), nil)
 }
 
+// Template handles GET /api/v1/inspections/tenancy/:tenancyID/template.
+// It previews the room/item checklist the unit profile would scaffold.
+func (h *Handler) Template(c *gin.Context) {
+	tenancyID, ok := idParam(c, "tenancyID")
+	if !ok {
+		return
+	}
+	tpl, err := h.svc.Template(c.Request.Context(), authctx.UserID(c), tenancyID, c.DefaultQuery("kind", KindMoveIn))
+	if err != nil {
+		response.Abort(c, err)
+		return
+	}
+	response.OK(c, tpl, nil)
+}
+
 // Get handles GET /api/v1/inspections/:id.
 func (h *Handler) Get(c *gin.Context) {
 	id, ok := idParam(c, "id")

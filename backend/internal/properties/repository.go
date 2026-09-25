@@ -99,9 +99,13 @@ type ListingFilter struct {
 }
 
 // ListListed returns ACTIVE, landlord-listed properties, newest first.
+// Properties that currently have an occupying tenancy (invited, active, giving
+// notice or moving out) are excluded so a unit under an existing tenancy is
+// never misrepresented as available on the marketplace.
 func (r *Repository) ListListed(ctx context.Context, f ListingFilter) ([]Property, error) {
 	q := r.db.WithContext(ctx).
-		Where("listed = ? AND status = ?", true, StatusActive)
+		Where("listed = ? AND status = ?", true, StatusActive).
+		Where("NOT EXISTS (SELECT 1 FROM tenancies t WHERE t.property_id = properties.id AND t.status IN ('INVITED', 'ACTIVE', 'NOTICE_GIVEN', 'MOVE_OUT'))")
 	if f.City != "" {
 		q = q.Where("city ILIKE ?", "%"+f.City+"%")
 	}

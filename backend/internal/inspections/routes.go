@@ -7,18 +7,20 @@ import (
 	"rental-settlement/backend/internal/audit"
 	"rental-settlement/backend/internal/billing"
 	"rental-settlement/backend/internal/notifications"
+	"rental-settlement/backend/internal/properties"
 	"rental-settlement/backend/internal/tenancies"
 	"rental-settlement/backend/pkg/storage"
 )
 
 // RegisterRoutes wires the authenticated inspection routes.
-func RegisterRoutes(group *gin.RouterGroup, db *gorm.DB, tenancySvc *tenancies.Service, billingSvc *billing.Service, auditSvc *audit.Service, notify *notifications.Service, storageService storage.Service) {
+func RegisterRoutes(group *gin.RouterGroup, db *gorm.DB, tenancySvc *tenancies.Service, propRepo *properties.Repository, billingSvc *billing.Service, auditSvc *audit.Service, notify *notifications.Service, storageService storage.Service) {
 	repo := NewRepository(db)
-	svc := NewService(repo, tenancySvc, billingSvc, auditSvc, notify, storageService)
+	svc := NewService(repo, tenancySvc, propRepo, billingSvc, auditSvc, notify, storageService)
 	h := NewHandler(svc)
 
 	g := group.Group("/inspections")
 	g.GET("/tenancy/:tenancyID", h.List)
+	g.GET("/tenancy/:tenancyID/template", h.Template)
 	g.POST("/tenancy/:tenancyID/move-in", h.CreateMoveIn)
 	g.POST("/tenancy/:tenancyID/move-out", h.CreateMoveOut)
 	g.GET("/:id", h.Get)

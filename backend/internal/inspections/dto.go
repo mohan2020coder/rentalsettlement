@@ -2,10 +2,13 @@ package inspections
 
 import "time"
 
-// CreateInspectionRequest carries the optional notes and any extra room names.
+// CreateInspectionRequest carries the optional notes, any extra room names,
+// and the names of default rooms the creator wants to leave out of the
+// checklist (so a unit's inspection matches its actual rooms).
 type CreateInspectionRequest struct {
-	Notes string   `json:"notes"`
-	Rooms []string `json:"rooms"`
+	Notes        string   `json:"notes"`
+	Rooms        []string `json:"rooms"`
+	ExcludeRooms []string `json:"exclude_rooms"`
 }
 
 // SaveItemRequest sets an item's observed condition and notes.
@@ -65,4 +68,24 @@ func nullableStringPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// TemplateRoom is one room in the derived inspection checklist preview.
+type TemplateRoom struct {
+	Name  string   `json:"name"`
+	Items []string `json:"items"`
+}
+
+// InspectionTemplate is the room/item checklist the backend would scaffold
+// for a tenancy's unit, so the UI can show the type and let the creator
+// decide which rooms to keep before starting the inspection.
+type InspectionTemplate struct {
+	PropertyName     string         `json:"property_name"`
+	PropertyType     string         `json:"property_type"`
+	Bedrooms         int            `json:"bedrooms"`
+	Bathrooms        int            `json:"bathrooms"`
+	FurnishingStatus string         `json:"furnishing_status"`
+	Kind             string         `json:"kind"`
+	ReusedFromMoveIn bool           `json:"reused_from_move_in"`
+	Rooms            []TemplateRoom `json:"rooms"`
 }

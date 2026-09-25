@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { AuthProvider } from './src/auth/AuthContext';
+import { UnreadProvider } from './src/notifications/UnreadContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import { theme } from './src/theme';
 
@@ -25,10 +26,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style="dark" />
-          <RootNavigator />
-        </NavigationContainer>
+        <UnreadProvider>
+          <NavigationContainer theme={navTheme}>
+            <StatusBar style="dark" />
+            <RootNavigator />
+          </NavigationContainer>
+        </UnreadProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

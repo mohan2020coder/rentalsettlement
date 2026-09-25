@@ -195,6 +195,42 @@ func (h *Handler) DisputeWithdraw(c *gin.Context) {
 	response.OK(c, d, nil)
 }
 
+// AddMedia handles POST /api/v1/deductions/:id/media.
+func (h *Handler) AddMedia(c *gin.Context) {
+	claimID, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+	var req AddEvidenceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "INVALID_JSON", "Malformed request body", nil)
+		return
+	}
+	e, err := h.svc.AddEvidence(c.Request.Context(), authctx.UserID(c), claimID, req)
+	if err != nil {
+		response.Abort(c, err)
+		return
+	}
+	response.Created(c, e)
+}
+
+// DeleteMedia handles DELETE /api/v1/deductions/:id/media/:mediaID.
+func (h *Handler) DeleteMedia(c *gin.Context) {
+	claimID, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+	mediaID, ok := idParam(c, "mediaID")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteEvidence(c.Request.Context(), authctx.UserID(c), claimID, mediaID); err != nil {
+		response.Abort(c, err)
+		return
+	}
+	response.OK(c, gin.H{"deleted": true}, nil)
+}
+
 func idParam(c *gin.Context, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(c.Param(name))
 	if err != nil {

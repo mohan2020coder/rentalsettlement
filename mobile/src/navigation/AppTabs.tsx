@@ -1,13 +1,12 @@
-import React, { ComponentProps } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { ComponentProps, useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
+import { useUnread } from '../notifications/UnreadContext';
 import { theme } from '../theme';
 import { TabParamList } from './types';
-import HomeScreen from '../screens/home/HomeScreen';
-import DiscoverScreen from '../screens/discover/DiscoverScreen';
-import PropertiesScreen from '../screens/properties/PropertiesScreen';
+import { HomeTabStack, DiscoverTabStack, PropertiesTabStack } from './TabStacks';
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 import BillingScreen from '../screens/billing/BillingScreen';
 import AccountScreen from '../screens/account/AccountScreen';
@@ -20,16 +19,38 @@ function TabIcon({
   focused,
   color,
   icons,
+  badgeCount = 0,
 }: {
   focused: boolean;
   color: string;
   icons: { active: IoniconName; inactive: IoniconName };
+  badgeCount?: number;
 }) {
   return (
     <View style={styles.tabIcon}>
       {focused ? <View style={styles.tabIconPill} /> : null}
       <Ionicons name={focused ? icons.active : icons.inactive} size={22} color={color} />
+      {badgeCount > 0 ? (
+        <View style={styles.tabIconBadge}>
+          <Text style={styles.tabIconBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
+        </View>
+      ) : null}
     </View>
+  );
+}
+
+function UpdatesTabIcon({ focused, color }: { focused: boolean; color: string }) {
+  const { count, refresh } = useUnread();
+  useEffect(() => {
+    if (focused) void refresh();
+  }, [focused]);
+  return (
+    <TabIcon
+      focused={focused}
+      color={color}
+      icons={{ active: 'notifications', inactive: 'notifications-outline' }}
+      badgeCount={count}
+    />
   );
 }
 
@@ -45,6 +66,19 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: theme.colors.primarySoft,
   },
+  tabIconBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: theme.colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabIconBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 });
 
 export default function AppTabs() {
@@ -54,6 +88,7 @@ export default function AppTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
+        lazy: false,
         headerShown: false,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textSubtle,
@@ -75,7 +110,7 @@ export default function AppTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeScreen}
+        component={HomeTabStack}
         options={{
           title: 'Home',
           tabBarIcon: ({ focused, color }) => (
@@ -86,7 +121,7 @@ export default function AppTabs() {
       {!isLandlord && (
         <Tab.Screen
           name="Discover"
-          component={DiscoverScreen}
+          component={DiscoverTabStack}
           options={{
             title: 'Discover',
             tabBarIcon: ({ focused, color }) => (
@@ -98,7 +133,7 @@ export default function AppTabs() {
       {isLandlord && (
         <Tab.Screen
           name="Properties"
-          component={PropertiesScreen}
+          component={PropertiesTabStack}
           options={{
             title: 'Properties',
             tabBarIcon: ({ focused, color }) => (
@@ -113,7 +148,7 @@ export default function AppTabs() {
         options={{
           title: 'Updates',
           tabBarIcon: ({ focused, color }) => (
-            <TabIcon focused={focused} color={color} icons={{ active: 'notifications', inactive: 'notifications-outline' }} />
+            <UpdatesTabIcon focused={focused} color={color} />
           ),
         }}
       />

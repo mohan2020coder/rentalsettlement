@@ -2,6 +2,7 @@ package inspections
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 	"rental-settlement/backend/internal/audit"
 	"rental-settlement/backend/internal/billing"
 	"rental-settlement/backend/internal/notifications"
+	"rental-settlement/backend/internal/properties"
 	"rental-settlement/backend/internal/tenancies"
 	"rental-settlement/backend/pkg/response"
 	"rental-settlement/backend/pkg/storage"
@@ -18,6 +20,7 @@ import (
 type Service struct {
 	repo      *Repository
 	tenancies *tenancies.Service
+	propRepo  *properties.Repository
 	billing   *billing.Service
 	audit     *audit.Service
 	notify    *notifications.Service
@@ -25,17 +28,122 @@ type Service struct {
 }
 
 // NewService builds the inspection service.
-func NewService(repo *Repository, tenancySvc *tenancies.Service, billingSvc *billing.Service, auditSvc *audit.Service, notify *notifications.Service, storageService storage.Service) *Service {
-	return &Service{repo: repo, tenancies: tenancySvc, billing: billingSvc, audit: auditSvc, notify: notify, storage: storageService}
+func NewService(repo *Repository, tenancySvc *tenancies.Service, propRepo *properties.Repository, billingSvc *billing.Service, auditSvc *audit.Service, notify *notifications.Service, storageService storage.Service) *Service {
+	return &Service{repo: repo, tenancies: tenancySvc, propRepo: propRepo, billing: billingSvc, audit: auditSvc, notify: notify, storage: storageService}
+}
+
+// propertyConfig derives the inspection checklist profile from the unit.
+func propertyConfig(p *properties.Property) PropertyConfig {
+	cfg := PropertyConfig{Furnished: p.FurnishingStatus != nil && (*p.FurnishingStatus == properties.Furnished || *p.FurnishingStatus == properties.SemiFurnished)}
+	if p.Bedrooms != nil {
+		cfg.Bedrooms = *p.Bedrooms
+	}
+	if p.Bathrooms != nil {
+		cfg.Bathrooms = *p.Bathrooms
+	}
+	return cfg.normalize()
+}
+
+// Template previews the room/item checklist that would be scaffolded for a
+// tenancy, given the unit type and the requested inspection kind.
+func (s *Service) Template(ctx context.Context, userID uuid.UUID, tenancyID uuid.UUID, kind string) (*InspectionTemplate, error) {
+	t, err := s.tenancies.CheckAccess(ctx, userID, tenancyID)
+	if err != nil {
+		return nil, err
+	}
+	prop, err := s.propRepo.ByID(ctx, t.PropertyID)
+	if err != nil {
+		return nil, err
+	}
+	cfg := propertyConfig(prop)
+
+	normKind := strings.ToUpper(strings.TrimSpace(kind))
+	if normKind != KindMoveOut {
+		normKind = KindMoveIn
+	}
+
+	furnishing := ""
+	if prop.FurnishingStatus != nil {
+		furnishing = *prop.FurnishingStatus
+	}
+	out := &InspectionTemplate{
+		PropertyName:     prop.PropertyName,
+		PropertyType:     prop.PropertyType,
+		Bedrooms:         cfg.Bedrooms,
+		Bathrooms:        cfg.Bathrooms,
+		FurnishingStatus: furnishing,
+		Kind:             normKind,
+		Rooms:            make([]TemplateRoom, 0),
+	}
+
+	// A move-out inspection reuses the tree created at move-in (the creator
+	// selects rooms once, not again). Fall back to the unit profile otherwise.
+	if normKind == KindMoveOut {
+		if moveIn := s.moveInFor(ctx, tenancyID); moveIn != nil {
+			out.ReusedFromMoveIn = true
+			rooms := make([]TemplateRoom, 0, len(moveIn.Rooms)+len(departureExtras))
+			for _, r := range moveIn.Rooms {
+				items := make([]string, 0, len(r.Items))
+				for _, it := range r.Items {
+					items = append(items, it.Name)
+				}
+				rooms = append(rooms, TemplateRoom{Name: r.Name, Items: items})
+			}
+			for _, d := range departureExtras {
+				rooms = append(rooms, TemplateRoom{Name: d.name, Items: d.items})
+			}
+			out.Rooms = rooms
+			return out, nil
+		}
+	}
+
+	for _, d := range propertyRooms(cfg) {
+		out.Rooms = append(out.Rooms, TemplateRoom{Name: d.name, Items: d.items})
+	}
+	if normKind == KindMoveOut {
+		for _, d := range departureExtras {
+			out.Rooms = append(out.Rooms, TemplateRoom{Name: d.name, Items: d.items})
+		}
+	}
+	return out, nil
+}
+
+// moveInFor returns the newest move-in inspection for a tenancy, if any.
+func (s *Service) moveInFor(ctx context.Context, tenancyID uuid.UUID) *Inspection {
+	list, err := s.repo.ListByTenancy(ctx, tenancyID)
+	if err != nil {
+		return nil
+	}
+	var moveIn *Inspection
+	for i := range list {
+		if list[i].Kind == KindMoveIn {
+			moveIn = &list[i]
+			break
+		}
+	}
+	if moveIn == nil {
+		return nil
+	}
+	full, err := s.repo.ByID(ctx, moveIn.ID)
+	if err != nil {
+		return nil
+	}
+	return full
 }
 
 // CreateMoveIn builds a move-in inspection from the standard template for a
-// tenancy. Either party may start it; it starts in DRAFT.
+// tenancy. Either party may start it; it starts in DRAFT. The room/item
+// checklist is derived from the unit profile (bedrooms/bathrooms/furnishing).
 func (s *Service) CreateMoveIn(ctx context.Context, userID uuid.UUID, tenancyID uuid.UUID, req CreateInspectionRequest) (*Inspection, error) {
-	if _, err := s.tenancies.CheckAccess(ctx, userID, tenancyID); err != nil {
+	t, err := s.tenancies.CheckAccess(ctx, userID, tenancyID)
+	if err != nil {
 		return nil, err
 	}
-	rooms := buildTemplate(setStringSlice(req.Rooms))
+	prop, err := s.propRepo.ByID(ctx, t.PropertyID)
+	if err != nil {
+		return nil, err
+	}
+	rooms := buildTemplate(propertyConfig(prop), setStringSlice(req.Rooms), req.ExcludeRooms)
 	insp := &Inspection{
 		TenancyID: tenancyID,
 		Kind:      KindMoveIn,
@@ -72,27 +180,20 @@ func (s *Service) CreateMoveOut(ctx context.Context, userID uuid.UUID, tenancyID
 	}
 
 	// Reflect the move-in structure (if any) and append departure rooms.
-	var moveIn *Inspection
-	list, err := s.repo.ListByTenancy(ctx, tenancyID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range list {
-		if list[i].Kind == KindMoveIn {
-			moveIn = &list[i]
-			break
-		}
-	}
+	moveIn := s.moveInFor(ctx, tenancyID)
 
 	rooms := make([]Room, 0)
 	if moveIn != nil {
-		full, err := s.repo.ByID(ctx, moveIn.ID)
+		for _, r := range moveIn.Rooms {
+			rooms = append(rooms, Room{Name: r.Name, SortOrder: r.SortOrder, Items: copyItems(r.Items)})
+		}
+	} else {
+		// No move-in report exists; derive from the unit profile instead.
+		prop, err := s.propRepo.ByID(ctx, t.PropertyID)
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range full.Rooms {
-			rooms = append(rooms, Room{Name: r.Name, SortOrder: r.SortOrder, Items: copyItems(r.Items)})
-		}
+		rooms = buildTemplate(propertyConfig(prop), setStringSlice(req.Rooms), req.ExcludeRooms)
 	}
 	rooms = append(rooms, departureTemplate()...)
 

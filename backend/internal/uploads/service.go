@@ -16,7 +16,15 @@ import (
 const MaxUploadBytes = 8 * 1024 * 1024
 
 // AllowedMime lists content types the generic upload endpoint accepts.
-var AllowedMime = []string{"image/jpeg", "image/png", "image/webp"}
+// Photos and short inspection videos are both supported.
+var AllowedMime = []string{
+	"image/jpeg",
+	"image/png",
+	"image/webp",
+	"video/mp4",
+	"video/quicktime",
+	"video/webm",
+}
 
 // ErrInvalidUpload is returned for uploads that fail validation.
 var ErrInvalidUpload = errors.New("invalid upload")

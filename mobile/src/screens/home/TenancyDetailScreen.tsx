@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackScreenProps } from '../../navigation/types';
+import { openTabScreen } from '../../navigation/helpers';
 import { get, post, extractError } from '../../api/client';
 import { Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
@@ -122,7 +123,11 @@ export default function TenancyDetailScreen({
         icon="business-outline"
         title={label}
         subtitle="Photos, details and rental context"
-        onPress={() => navigation.navigate('PropertyDetail', { propertyId: t.property_id })}
+        onPress={() =>
+          openTabScreen(navigation, isLandlord ? 'Properties' : 'Discover', 'PropertyDetail', {
+            propertyId: t.property_id,
+          })
+        }
       />
 
       <SectionHeader title="Documents & records" />
@@ -226,7 +231,7 @@ export default function TenancyDetailScreen({
               <Button
                 label="Find next home"
                 small
-                onPress={() => navigation.navigate('Main', { screen: 'Discover' })}
+                onPress={() => navigation.navigate('Discover')}
               />
             )}
           </View>

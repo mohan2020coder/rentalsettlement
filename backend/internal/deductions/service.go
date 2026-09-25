@@ -9,22 +9,25 @@ import (
 	"gorm.io/datatypes"
 
 	"rental-settlement/backend/internal/audit"
+	"rental-settlement/backend/internal/billing"
 	"rental-settlement/backend/internal/notifications"
 	"rental-settlement/backend/internal/tenancies"
 	"rental-settlement/backend/pkg/response"
+	"rental-settlement/backend/pkg/storage"
 )
 
 // Service implements deduction-claim and dispute business rules.
 type Service struct {
 	repo      *Repository
 	tenancies *tenancies.Service
+	billing   *billing.Service
 	audit     *audit.Service
 	notify    *notifications.Service
 }
 
 // NewService builds the deductions service.
-func NewService(repo *Repository, tenancySvc *tenancies.Service, auditSvc *audit.Service, notify *notifications.Service) *Service {
-	return &Service{repo: repo, tenancies: tenancySvc, audit: auditSvc, notify: notify}
+func NewService(repo *Repository, tenancySvc *tenancies.Service, billingSvc *billing.Service, auditSvc *audit.Service, notify *notifications.Service) *Service {
+	return &Service{repo: repo, tenancies: tenancySvc, billing: billingSvc, audit: auditSvc, notify: notify}
 }
 
 // Propose lets the landlord raise a deduction claim during move-out.
@@ -90,7 +93,79 @@ func (s *Service) Get(ctx context.Context, userID uuid.UUID, claimID uuid.UUID) 
 	if _, err := s.tenancies.CheckAccess(ctx, userID, c.TenancyID); err != nil {
 		return nil, err
 	}
+	c.Evidence, _ = s.repo.ListEvidence(ctx, claimID)
 	return c, nil
+}
+
+// AddEvidence attaches a file (uploaded earlier via the storage endpoint) to a
+// claim. Either party can attach evidence so deductions stay reviewable.
+func (s *Service) AddEvidence(ctx context.Context, userID uuid.UUID, claimID uuid.UUID, req AddEvidenceRequest) (*ClaimEvidence, error) {
+	c, err := s.repo.ClaimByID(ctx, claimID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.tenancies.CheckAccess(ctx, userID, c.TenancyID); err != nil {
+		return nil, err
+	}
+	if req.FilePath == "" {
+		return nil, response.NewError(400, "VALIDATION_ERROR", "file_path is required")
+	}
+	if err := storage.ValidateKey(req.FilePath); err != nil {
+		return nil, response.NewError(400, "VALIDATION_ERROR", "file_path must reference platform storage")
+	}
+
+	e := &ClaimEvidence{
+		ClaimID:    claimID,
+		UploadedBy: userID,
+		FilePath:   req.FilePath,
+		MimeType:   req.MimeType,
+		FileSize:   req.FileSize,
+		SHA256Hash: req.SHA256Hash,
+	}
+	if err := s.repo.CreateEvidence(ctx, e); err != nil {
+		return nil, err
+	}
+
+	_ = s.billing.RecordUsage(ctx, userID, billing.MetricStorageBytes, e.FileSize, &e.ID, nil)
+	_ = s.audit.Record(ctx, audit.Entry{
+		ActorID:    &userID,
+		TenancyID:  &c.TenancyID,
+		Action:     audit.ActionMediaUploaded,
+		EntityType: "claim_evidence",
+		EntityID:   &e.ID,
+		Metadata:   map[string]any{"file_size": e.FileSize},
+	})
+	return e, nil
+}
+
+// DeleteEvidence removes an attachment; only the uploader or a party who has
+// access may remove it.
+func (s *Service) DeleteEvidence(ctx context.Context, userID uuid.UUID, claimID, evidenceID uuid.UUID) error {
+	c, err := s.repo.ClaimByID(ctx, claimID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.tenancies.CheckAccess(ctx, userID, c.TenancyID); err != nil {
+		return err
+	}
+	e, err := s.repo.EvidenceByID(ctx, evidenceID)
+	if err != nil {
+		return err
+	}
+	if e.ClaimID != claimID {
+		return response.NewError(400, "VALIDATION_ERROR", "Evidence does not belong to this claim")
+	}
+	if err := s.repo.DeleteEvidence(ctx, evidenceID); err != nil {
+		return err
+	}
+	_ = s.audit.Record(ctx, audit.Entry{
+		ActorID:    &userID,
+		TenancyID:  &c.TenancyID,
+		Action:     audit.ActionMediaDeleted,
+		EntityType: "claim_evidence",
+		EntityID:   &e.ID,
+	})
+	return nil
 }
 
 // Accept lets the tenant accept the full proposed deduction.

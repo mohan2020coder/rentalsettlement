@@ -300,6 +300,18 @@ export interface DeductionClaim {
   status: ClaimStatus;
   created_at: string;
   updated_at: string;
+  evidence?: ClaimEvidence[];
+}
+
+export interface ClaimEvidence {
+  id: string;
+  claim_id: string;
+  uploaded_by: string;
+  file_path: string;
+  mime_type: string;
+  file_size: number;
+  sha256_hash: string;
+  uploaded_at: string;
 }
 
 export type DisputeStatus = 'OPEN' | 'NEGOTIATING' | 'AGREED' | 'UNRESOLVED' | 'CLOSED';
@@ -458,6 +470,23 @@ export interface CreateAgreementPayload {
 export interface CreateInspectionPayload {
   notes?: string;
   rooms?: string[];
+  exclude_rooms?: string[];
+}
+
+export interface InspectionTemplateRoom {
+  name: string;
+  items: string[];
+}
+
+export interface InspectionTemplate {
+  property_name: string;
+  property_type: string;
+  bedrooms: number;
+  bathrooms: number;
+  furnishing_status: string;
+  kind: 'MOVE_IN' | 'MOVE_OUT';
+  reused_from_move_in: boolean;
+  rooms: InspectionTemplateRoom[];
 }
 
 export interface SaveItemPayload {

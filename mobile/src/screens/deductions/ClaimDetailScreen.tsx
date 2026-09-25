@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { RootStackScreenProps } from '../../navigation/types';
-import { get, post, extractError } from '../../api/client';
-import { DeductionClaim, Dispute } from '../../api/types';
+import { get, post, del, upload, extractError, mediaUrl } from '../../api/client';
+import { ClaimEvidence, DeductionClaim, Dispute } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { useAuth } from '../../auth/AuthContext';
-import { Button, Divider, ErrorView, Input, LoadingView, Row, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
+import { Button, Divider, ErrorView, Input, Lightbox, LoadingView, Row, Screen, ScreenTitle, StatusBadge } from '../../components/ui';
 import { formatDate, humanize } from '../../utils/format';
 import { theme } from '../../theme';
+
+function isVideo(m: ClaimEvidence): boolean {
+  return (m.mime_type || '').toLowerCase().startsWith('video/');
+}
 
 export default function ClaimDetailScreen({
   route,
@@ -18,6 +23,9 @@ export default function ClaimDetailScreen({
   const [busy, setBusy] = useState<string | null>(null);
   const [disputeMode, setDisputeMode] = useState(false);
   const [reason, setReason] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ uris: string[]; index: number } | null>(null);
 
   const claim = useLoad(async () => get<DeductionClaim>(`/deductions/${claimId}`), [claimId], { refreshOnFocus: true });
 
@@ -68,6 +76,93 @@ export default function ClaimDetailScreen({
   };
 
   const amount = `${c.currency === 'INR' ? '\u20B9' : c.currency} ${(c.claimed_amount_minor / 100).toLocaleString('en-IN')}`;
+  const evidence = c.evidence ?? [];
+
+  const buildForm = async (
+    asset: ImagePicker.ImagePickerAsset,
+    isVideo: boolean,
+  ): Promise<{ form: FormData; mime: string }> => {
+    const mime = asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg');
+    const ext = (mime.split('/')[1] || (isVideo ? 'mp4' : 'jpg')).replace('jpeg', 'jpg');
+    const form = new FormData();
+    if (asset.uri.startsWith('data:')) {
+      const blob = await (await fetch(asset.uri)).blob();
+      form.append('file', blob, `media.${ext}`);
+    } else {
+      form.append('file', { uri: asset.uri, name: `media.${ext}`, type: mime } as unknown as Blob);
+    }
+    return { form, mime };
+  };
+
+  const attachEvidence = async (isVideo: boolean) => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow photo library access to attach evidence.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: isVideo ? ['videos'] : ['images'],
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+
+      setUploading(true);
+      const { form, mime } = await buildForm(asset, isVideo);
+      const ref = await upload<{ file_path: string; mime_type: string; size: number }>('/storage/upload', form);
+      await post<ClaimEvidence>(`/deductions/${claimId}/media`, {
+        file_path: ref.file_path,
+        mime_type: ref.mime_type || mime,
+        file_size: ref.size,
+        sha256_hash: '',
+      });
+      claim.reload();
+    } catch (err) {
+      Alert.alert('Could not attach evidence', extractError(err).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const chooseEvidence = () => {
+    Alert.alert('Add evidence', 'Attach photos or videos that support this claim.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Photo', onPress: () => void attachEvidence(false) },
+      { text: 'Video', onPress: () => void attachEvidence(true) },
+    ]);
+  };
+
+  const openEvidence = (m: ClaimEvidence) => {
+    const uri = mediaUrl(m.file_path);
+    if (!uri) return;
+    if (isVideo(m)) {
+      void Linking.openURL(uri);
+      return;
+    }
+    const list = evidence.filter((x) => !isVideo(x));
+    const index = list.findIndex((x) => x.id === m.id);
+    const uris = list.map((x) => mediaUrl(x.file_path) ?? '');
+    setPreview({ uris: uris.filter(Boolean), index: Math.max(index, 0) });
+  };
+
+  const removeEvidence = (m: ClaimEvidence) => {
+    Alert.alert('Remove evidence?', 'This file will be removed from the claim for both parties.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          setDeleting(m.id);
+          del(`/deductions/${claimId}/media/${m.id}`)
+            .then(() => claim.reload())
+            .catch((err) => Alert.alert('Could not remove', extractError(err).message))
+            .finally(() => setDeleting(null));
+        },
+      },
+    ]);
+  };
 
   return (
     <Screen scroll keyboard>
@@ -90,10 +185,58 @@ export default function ClaimDetailScreen({
       </View>
 
       <View style={styles.evidenceCard}>
-        <Text style={styles.evidenceTitle}>Evidence</Text>
-        <Text style={styles.evidenceSub}>Attach move-in / move-out photos and quotations for this claim.</Text>
+        <View style={styles.evidenceHead}>
+          <Ionicons name="images-outline" size={18} color={theme.colors.primary} />
+          <Text style={styles.evidenceTitle}>Evidence</Text>
+          {evidence.length > 0 ? <Text style={styles.evidenceCount}>{evidence.length}</Text> : null}
+        </View>
+        <Text style={styles.evidenceSub}>
+          {evidence.length === 0
+            ? 'Attach move-in / move-out photos and quotations so the claim is clear for both parties.'
+            : 'Photos and videos backing this claim.'}
+        </Text>
+        {evidence.length > 0 ? (
+          <View style={styles.evidenceGrid}>
+            {evidence.map((m) => (
+              <Pressable key={m.id} style={styles.evidenceTile} onPress={() => openEvidence(m)}>
+                {isVideo(m) ? (
+                  <View style={styles.videoTile}>
+                    <Ionicons name="videocam" size={24} color={theme.colors.white} />
+                    <Text style={styles.videoTileText}>Video</Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: mediaUrl(m.file_path) ?? undefined }}
+                    style={styles.evidenceImage}
+                    resizeMode="cover"
+                  />
+                )}
+                <Pressable
+                  style={styles.removeBtn}
+                  hitSlop={8}
+                  onPress={() => removeEvidence(m)}
+                  disabled={deleting !== null}
+                >
+                  {deleting === m.id ? (
+                    <Ionicons name="hourglass-outline" size={12} color={theme.colors.white} />
+                  ) : (
+                    <Ionicons name="close" size={12} color={theme.colors.white} />
+                  )}
+                </Pressable>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <View style={styles.evidenceActions}>
-          <Button label="Add evidence" variant="ghost" small icon="cloud-upload-outline" onPress={() => {}} />
+          <Button
+            label={uploading ? 'Uploading…' : 'Add evidence'}
+            variant="ghost"
+            small
+            icon="cloud-upload-outline"
+            onPress={chooseEvidence}
+            loading={uploading}
+            disabled={uploading}
+          />
         </View>
       </View>
 
@@ -139,6 +282,13 @@ export default function ClaimDetailScreen({
           </Text>
         </View>
       )}
+
+      <Lightbox
+        visible={!!preview}
+        uris={preview?.uris ?? []}
+        initialIndex={preview?.index ?? 0}
+        onClose={() => setPreview(null)}
+      />
     </Screen>
   );
 }
@@ -175,7 +325,48 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   evidenceTitle: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
+  evidenceHead: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  evidenceCount: {
+    fontSize: theme.text.small,
+    fontWeight: '700',
+    color: theme.colors.textSubtle,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
   evidenceSub: { color: theme.colors.textSubtle, fontSize: theme.text.caption, marginTop: 2 },
+  evidenceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.md },
+  evidenceTile: {
+    width: 92,
+    height: 92,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.background,
+  },
+  evidenceImage: { width: '100%', height: '100%' },
+  videoTile: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1A1F35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  videoTileText: { color: theme.colors.white, fontSize: 9, fontWeight: '700' },
+  removeBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   evidenceActions: { marginTop: theme.spacing.md },
   gap: { marginTop: theme.spacing.sm },
   multiline: { height: 90, textAlignVertical: 'top' },

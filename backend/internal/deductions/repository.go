@@ -125,3 +125,36 @@ func (r *Repository) Events(ctx context.Context, disputeID uuid.UUID) ([]Dispute
 		Find(&list).Error
 	return list, err
 }
+
+// CreateEvidence inserts a claim evidence attachment.
+func (r *Repository) CreateEvidence(ctx context.Context, e *ClaimEvidence) error {
+	return r.db.WithContext(ctx).Create(e).Error
+}
+
+// ListEvidence returns all attachments for a claim, oldest first.
+func (r *Repository) ListEvidence(ctx context.Context, claimID uuid.UUID) ([]ClaimEvidence, error) {
+	var list []ClaimEvidence
+	err := r.db.WithContext(ctx).
+		Where("claim_id = ?", claimID).
+		Order("uploaded_at asc").
+		Find(&list).Error
+	return list, err
+}
+
+// EvidenceByID returns a single claim attachment.
+func (r *Repository) EvidenceByID(ctx context.Context, evidenceID uuid.UUID) (*ClaimEvidence, error) {
+	var e ClaimEvidence
+	err := r.db.WithContext(ctx).Where("id = ?", evidenceID).First(&e).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.NewError(404, "EVIDENCE_NOT_FOUND", "Evidence not found")
+		}
+		return nil, err
+	}
+	return &e, nil
+}
+
+// DeleteEvidence removes a claim attachment by id.
+func (r *Repository) DeleteEvidence(ctx context.Context, evidenceID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("id = ?", evidenceID).Delete(&ClaimEvidence{}).Error
+}

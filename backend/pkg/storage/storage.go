@@ -61,6 +61,8 @@ func extForMime(mimeType string) string {
 		return ".mp4"
 	case "video/quicktime":
 		return ".mov"
+	case "video/webm":
+		return ".webm"
 	case "application/pdf":
 		return ".pdf"
 	default:

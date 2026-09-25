@@ -20,3 +20,11 @@ type CounterOfferRequest struct {
 	NewAmountMinor int64  `json:"new_amount_minor"`
 	Reason         string `json:"reason"`
 }
+
+// AddEvidenceRequest registers an attachment previously uploaded to storage.
+type AddEvidenceRequest struct {
+	FilePath   string `json:"file_path"`
+	MimeType   string `json:"mime_type"`
+	FileSize   int64  `json:"file_size"`
+	SHA256Hash string `json:"sha256_hash"`
+}

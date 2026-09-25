@@ -151,14 +151,14 @@ export default function AccountScreen() {
       </View>
 
       <View style={styles.quickRow}>
-        <Pressable style={styles.quickTile} onPress={() => navigation.navigate('Audit', {})}>
+        <Pressable style={styles.quickTile} onPress={() => navigation.navigate('Home', { screen: 'Audit', params: {} })}>
           <View style={styles.quickIcon}>
             <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.primary} />
           </View>
           <Text style={styles.quickTitle}>Audit trail</Text>
           <Text style={styles.quickSub}>Your recorded actions</Text>
         </Pressable>
-        <Pressable style={styles.quickTile} onPress={() => navigation.navigate('Main', { screen: 'Billing' })}>
+        <Pressable style={styles.quickTile} onPress={() => navigation.navigate('Billing')}>
           <View style={styles.quickIcon}>
             <Ionicons name="sparkles-outline" size={20} color={theme.colors.primary} />
           </View>

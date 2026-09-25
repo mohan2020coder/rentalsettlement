@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { get, mediaUrl } from '../../api/client';
-import { Property, Tenancy } from '../../api/types';
+import { Application, Property, Tenancy } from '../../api/types';
 import { useLoad } from '../../hooks';
 import { Badge, Button, EmptyState, ErrorView, LoadingView, PropertyImage, Screen, SearchBar, ScreenTitle } from '../../components/ui';
 import { RootStackParamList } from '../../navigation/types';
@@ -17,6 +17,9 @@ export default function PropertiesScreen() {
 
   const props = useLoad(async () => get<Property[]>('/properties'), [], { refreshOnFocus: true });
   const tenancies = useLoad(async () => get<Tenancy[]>('/tenancies'), [], { refreshOnFocus: true });
+  const applications = useLoad(async () => get<Application[]>('/applications'), [], { refreshOnFocus: true });
+
+  const pendingRequests = (applications.data ?? []).filter((a) => a.status === 'PENDING').length;
 
   const tenancyMap = useMemo(() => {
     const map: Record<string, { active: number; invited: number; tenancies: Tenancy[] }> = {};
@@ -82,6 +85,30 @@ export default function PropertiesScreen() {
           style={styles.createButton}
         />
       </View>
+
+      <Pressable
+        style={({ pressed }) => [styles.requestsCard, pressed && { opacity: 0.92 }]}
+        onPress={() => navigation.navigate('Applications')}
+      >
+        <View style={styles.requestsIcon}>
+          <Ionicons name="paper-plane-outline" size={18} color={theme.colors.primary} />
+        </View>
+        <View style={styles.requestsCopy}>
+          <Text style={styles.requestsTitle}>Visit requests</Text>
+          <Text style={styles.requestsSub}>
+            {pendingRequests > 0
+              ? `${pendingRequests} tenant ${pendingRequests === 1 ? 'request' : 'requests'} waiting for review`
+              : 'Tenant interest in your listed properties'}
+          </Text>
+        </View>
+        {pendingRequests > 0 ? (
+          <View style={styles.requestsCount}>
+            <Text style={styles.requestsCountText}>{pendingRequests}</Text>
+          </View>
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textSubtle} />
+        )}
+      </Pressable>
 
       {list.length === 0 ? (
         <View style={styles.emptyCard}>
@@ -176,6 +203,38 @@ const styles = StyleSheet.create({
   actions: { marginBottom: theme.spacing.md },
   searchWrap: { marginBottom: theme.spacing.md },
   createButton: {},
+  requestsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.primarySoft,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryLight,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  requestsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestsCopy: { flex: 1 },
+  requestsTitle: { fontSize: theme.text.body, fontWeight: '700', color: theme.colors.text },
+  requestsSub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2 },
+  requestsCount: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: theme.colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  requestsCountText: { color: '#fff', fontSize: theme.text.small, fontWeight: '800' },
   emptyCard: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg },
   propertyCard: {
     backgroundColor: theme.colors.surface,

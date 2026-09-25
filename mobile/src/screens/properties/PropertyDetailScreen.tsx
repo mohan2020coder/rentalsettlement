@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackScreenProps } from '../../navigation/types';
 import { get, mediaUrl } from '../../api/client';
@@ -19,6 +19,8 @@ const STAGES: { key: string; label: string; icon: IconName }[] = [
   { key: 'MOVE_OUT', label: 'Move-out', icon: 'log-out-outline' },
   { key: 'SETTLED', label: 'Settlement complete', icon: 'checkmark-done-circle-outline' },
 ];
+
+const OCCUPYING = ['INVITED', 'ACTIVE', 'NOTICE_GIVEN', 'MOVE_OUT'];
 
 function stageIndex(tenancies: Tenancy[]): number {
   let reached = 0;
@@ -42,6 +44,22 @@ function stageIndex(tenancies: Tenancy[]): number {
   return reached;
 }
 
+function statusColor(status: string): string {
+  switch (status) {
+    case 'ACTIVE':
+    case 'NOTICE_GIVEN':
+      return theme.colors.success;
+    case 'INVITED':
+      return theme.colors.info;
+    case 'MOVE_OUT':
+      return theme.colors.warning;
+    case 'SETTLED':
+      return theme.colors.primary;
+    default:
+      return theme.colors.textSubtle;
+  }
+}
+
 export default function PropertyDetailScreen({
   route,
   navigation,
@@ -50,6 +68,7 @@ export default function PropertyDetailScreen({
   const { user } = useAuth();
   const isLandlord = user?.role === 'LANDLORD';
   const [preview, setPreview] = useState<number | null>(null);
+  const [selectedTenancyId, setSelectedTenancyId] = useState<string | null>(null);
 
   const property = useLoad<Property | null>(
     async () => get<Property>(`/properties/${propertyId}`).catch(() => null),
@@ -78,7 +97,13 @@ export default function PropertyDetailScreen({
   const galleryKeys = p.photos?.length ? p.photos : p.photo ? [p.photo] : [];
   const galleryUris = galleryKeys.map((k) => mediaUrl(k)).filter((u): u is string => !!u);
 
-  const reached = stageIndex(propTenancies);
+  const effective =
+    propTenancies.find((t) => t.id === selectedTenancyId) ??
+    propTenancies.find((t) => OCCUPYING.includes(t.status)) ??
+    propTenancies[0] ??
+    null;
+
+  const reached = effective ? stageIndex([effective]) : 0;
   const stage = STAGES[Math.max(0, Math.min(reached, STAGES.length - 1))]!;
   const stageColor =
     stage.key === 'SETTLED' || stage.key === 'ACTIVE'
@@ -95,8 +120,7 @@ export default function PropertyDetailScreen({
     })
     .slice(0, 20);
 
-  const latest = propTenancies[0];
-  const occupying = !!latest && ['INVITED', 'ACTIVE', 'NOTICE_GIVEN', 'MOVE_OUT'].includes(latest.status);
+  const occupying = !!effective && OCCUPYING.includes(effective.status);
 
   return (
     <Screen scroll refreshing={property.loading} onRefresh={() => { property.reload(); tenancies.reload(); activity.reload(); }}>
@@ -147,6 +171,38 @@ export default function PropertyDetailScreen({
 
       {isLandlord ? (
         <>
+          {propTenancies.length > 1 ? (
+            <>
+              <SectionHeader title="Rental history" />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tenancyChipRow}
+                contentContainerStyle={styles.tenancyChipContent}
+              >
+                {propTenancies.map((t) => {
+                  const selected = effective?.id === t.id;
+                  const color = statusColor(t.status);
+                  return (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.tenancyChip, selected && styles.tenancyChipSelected]}
+                      onPress={() => setSelectedTenancyId(t.id)}
+                    >
+                      <View style={[styles.tenancyChipDot, { backgroundColor: color }]} />
+                      <View style={styles.tenancyChipCopy}>
+                        <Text style={[styles.tenancyChipLabel, selected && styles.tenancyChipLabelSelected]} numberOfLines={1}>
+                          {formatDate(t.start_date)} → {formatDate(t.end_date)}
+                        </Text>
+                        <Text style={styles.tenancyChipStatus}>{humanize(t.status)}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </>
+          ) : null}
+
           <SectionHeader title="Current stage" />
           <View style={styles.stageCard}>
             <View style={[styles.stageIcon, { backgroundColor: `${stageColor}1A` }]}>
@@ -160,12 +216,12 @@ export default function PropertyDetailScreen({
                     ? 'Listed for tenants to discover. Invite a tenant to start renting.'
                     : 'Not listed on the marketplace yet. Enable “List on marketplace” to let tenants apply.'
                   : reached >= 4
-                    ? 'The tenancy deposit has been settled and recorded.'
+                    ? 'This tenancy has been settled and the deposit recorded.'
                     : reached >= 3
-                      ? 'Move-out is in progress — inspections and the settlement are being recorded.'
+                      ? 'This tenancy is in move-out — inspections and the settlement are being recorded.'
                       : reached >= 2
-                        ? 'This property is occupied by an active tenancy.'
-                        : 'A tenant invitation is pending acceptance.'}
+                        ? 'This tenancy is active and occupying the property.'
+                        : 'A tenant invitation for this tenancy is pending acceptance.'}
               </Text>
             </View>
           </View>
@@ -212,7 +268,12 @@ export default function PropertyDetailScreen({
           <Button
             label="Open tenancy"
             small
-            onPress={() => navigation.navigate('TenancyDetail', { tenancyId: latest!.id, propertyName: p.property_name })}
+            onPress={() =>
+            navigation.navigate('Home', {
+              screen: 'TenancyDetail',
+              params: { tenancyId: effective!.id, propertyName: p.property_name },
+            })
+          }
           />
         </View>
       ) : p.listed ? (
@@ -263,14 +324,14 @@ export default function PropertyDetailScreen({
           <DetailCell icon="eye-outline" label="Marketplace" value={p.listed ? 'Listed' : 'Not listed'} />
           <DetailCell icon="calendar-outline" label="Added" value={formatDate(p.created_at)} />
         </View>
-        {latest && isLandlord ? (
+        {effective && isLandlord ? (
           <View style={[styles.latestRow, { borderTopWidth: 1, borderTopColor: theme.colors.border }]}>
             <Ionicons name="key-outline" size={15} color={theme.colors.primary} />
             <Text style={styles.latestText}>
-              {latest.property_name || p.property_name} · {humanize(latest.status)}
+              {effective.property_name || p.property_name} · {humanize(effective.status)}
             </Text>
             <Text style={styles.latestDate}>
-              {formatDate(latest.start_date)} → {formatDate(latest.end_date)}
+              {formatDate(effective.start_date)} → {formatDate(effective.end_date)}
             </Text>
           </View>
         ) : null}
@@ -408,6 +469,37 @@ const styles = StyleSheet.create({
   stageCopy: { flex: 1 },
   stageTitle: { fontSize: theme.text.body, fontWeight: '800' },
   stageSub: { fontSize: theme.text.caption, color: theme.colors.textSubtle, marginTop: 2, lineHeight: 18 },
+  tenancyChipRow: { flexGrow: 0, marginBottom: theme.spacing.sm },
+  tenancyChipContent: { gap: theme.spacing.sm, paddingRight: theme.spacing.sm },
+  tenancyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: theme.spacing.md,
+    maxWidth: 260,
+  },
+  tenancyChipSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primaryLight,
+  },
+  tenancyChipDot: { width: 8, height: 8, borderRadius: 4 },
+  tenancyChipCopy: { flexShrink: 1 },
+  tenancyChipLabel: {
+    fontSize: theme.text.small,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  tenancyChipLabelSelected: { color: theme.colors.primaryDark },
+  tenancyChipStatus: {
+    fontSize: theme.text.caption,
+    color: theme.colors.textSubtle,
+    textTransform: 'capitalize',
+  },
   rentBanner: {
     flexDirection: 'row',
     alignItems: 'center',

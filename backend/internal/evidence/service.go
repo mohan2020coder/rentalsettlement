@@ -212,6 +212,11 @@ func (s *Service) render(ctx context.Context, tenancyID uuid.UUID) ([]byte, erro
 	for i := range claims {
 		c := &claims[i]
 		line("%s: %s (%s), status=%s", c.Title, money.FormatMinor(c.ClaimedAmountMinor, c.Currency), c.Category, c.Status)
+		var evidence []deductions.ClaimEvidence
+		s.db.WithContext(ctx).Where("claim_id = ?", c.ID).Order("uploaded_at asc").Find(&evidence)
+		if len(evidence) > 0 {
+			line("  Evidence: %d attachment(s)", len(evidence))
+		}
 		var disputes []deductions.Dispute
 		s.db.WithContext(ctx).Where("deduction_claim_id = ?", c.ID).Order("created_at asc").Find(&disputes)
 		for d := range disputes {
